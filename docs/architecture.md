@@ -69,6 +69,8 @@ presentation     language semantics
 - 同名短类型即使位于不同兼容容器中也被视为歧义。
 - 内建类型名不能被用户类型覆盖。
 - 裸标识符只可在明确 enum 期望类型下解释为 enum member。
+- Checker 将 `Bool`/`Boolean`、`Int`/`Integer`、`ID`/`Id` 规范化为相同 builtin family；解析失败使用内部 invalid 结果抑制派生类型诊断。
+- Entity 只作为字段路径的中间类型。谓词、比较和 effect 只接受已批准的标量或 enum 终值；Decimal 上下文可精确接收非负 Integer 字面量，但不存在路径间数值转换。
 
 这是刻意的 v0.1 限制，不能通过在 CLI 或 simulator 中猜测作用域来绕过。
 
@@ -107,8 +109,8 @@ presentation     language semantics
 
 ## 8. 已知技术债务
 
-- 静态表达式类型分析仍不完整；部分错误只在受限 simulator 中由运行时类型守卫发现。
-- `ResolvedType::Builtin` 尚未区分全部内建类型身份，不能据此宣称完整赋值/比较兼容检查。
+- 当前静态表达式类型检查只覆盖已有 literal/path/binary、谓词和 effect，不包含通用推断、逻辑/算术表达式、数据流分析或形式化证明。
+- Simulator 仍保留类型守卫作为纵深防御；其值域仍只含 enum、Boolean 和 Integer，不能由静态 Decimal 规则推导出 Decimal 模拟支持。
 - CR-only 换行、负整数字面量和超长单行诊断窗口尚未形成完整产品契约。
 - 模块作用域、稳定机器可读输出和增量分析均未设计。
 

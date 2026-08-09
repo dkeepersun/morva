@@ -263,7 +263,7 @@ fn boolean_state_is_supported() {
 }
 
 #[test]
-fn unsupported_state_types_fail_at_runtime_without_panicking() {
+fn unsupported_effect_value_types_fail_static_check_before_simulation() {
     let source = r#"system Test {
   entity Item {
     id: ID
@@ -277,14 +277,13 @@ fn unsupported_state_types_fail_at_runtime_without_panicking() {
   }
 }
 "#;
-    let report = simulate(&checked(source), "Unsupported").unwrap();
-    let failure = report.failure.unwrap();
-    assert_eq!(failure.phase, SimulationPhase::Effects);
-    assert!(failure.message.contains("unsupported value type 'ID'"));
+    let document = parse(source).expect("valid syntax");
+    let diagnostic = simulate(&document, "Unsupported").expect_err("static check must fail");
+    assert_eq!(diagnostic.code, "MORVA2016");
 }
 
 #[test]
-fn set_effects_cannot_change_a_fields_runtime_type() {
+fn set_effect_type_mismatches_fail_static_check_before_simulation() {
     let source = r#"system Test {
   entity Counter { count: Integer }
   action Corrupt(counter: Counter) {
@@ -297,10 +296,9 @@ fn set_effects_cannot_change_a_fields_runtime_type() {
   }
 }
 "#;
-    let report = simulate(&checked(source), "Invalid").unwrap();
-    let failure = report.failure.unwrap();
-    assert_eq!(failure.phase, SimulationPhase::Effects);
-    assert!(failure.message.contains("not compatible"));
+    let document = parse(source).expect("valid syntax");
+    let diagnostic = simulate(&document, "Invalid").expect_err("static check must fail");
+    assert_eq!(diagnostic.code, "MORVA2016");
 }
 
 #[test]
@@ -323,7 +321,7 @@ fn entity_invariants_resolve_contextual_enum_members() {
 }
 
 #[test]
-fn equality_rejects_values_with_different_runtime_types() {
+fn equality_type_mismatches_fail_static_check_before_simulation() {
     let source = r#"system Test {
   entity Item {
     count: Integer
@@ -338,10 +336,9 @@ fn equality_rejects_values_with_different_runtime_types() {
   }
 }
 "#;
-    let report = simulate(&checked(source), "Invalid").unwrap();
-    let failure = report.failure.unwrap();
-    assert_eq!(failure.phase, SimulationPhase::Requires);
-    assert!(failure.message.contains("same type"));
+    let document = parse(source).expect("valid syntax");
+    let diagnostic = simulate(&document, "Invalid").expect_err("static check must fail");
+    assert_eq!(diagnostic.code, "MORVA2014");
 }
 
 #[test]

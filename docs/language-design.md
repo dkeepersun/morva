@@ -73,6 +73,9 @@ The current analyzer performs semantic static validation, not theorem proving. I
 - presence of exactly one top-level `system` and rejection of nested systems;
 - known and globally unambiguous short type names;
 - parameter/field paths, contextual enum members, and writable `effects` targets.
+- canonical builtin aliases, Boolean predicates, compatible comparison operands, same-type set effects, and Integer-only compound effects.
+
+Ordered comparison accepts Integer or Decimal. A non-negative Integer literal in an explicit Decimal comparison or assignment context is treated as an exact Decimal constant; this is a local compatibility rule, not general numeric conversion. Entity values may only be traversed to fields, not compared or assigned as whole objects.
 
 Morva does not yet implement module lookup rules. If compatibility containers introduce multiple types with the same short name, use of that short name is rejected as ambiguous regardless of declaration order.
 

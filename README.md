@@ -12,7 +12,7 @@ The current v0.1 scope is intentionally small:
 
 - strongly typed `system`, `entity`, `enum`, `action`, and `scenario` syntax models;
 - fields, parameters, enum members, and `requires`, `effects`, `ensures`, and `invariant` clauses;
-- duplicate-name, type, field-path, enum-member, and effect-target checks;
+- duplicate-name, type, field-path, enum-member, effect-target, canonical expression type, comparison, and effect-value checks;
 - deterministic `check`, `parse`, and `inspect` commands with source diagnostics;
 - pure in-memory simulation for one-action scenarios using enum, Boolean, and Integer state;
 - compatibility parsing for broader declarations and documented soft behavior already used by the example.

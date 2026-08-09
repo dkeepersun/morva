@@ -47,7 +47,7 @@ entity Order {
 }
 ```
 
-当前内建类型名：`Bool`/`Boolean`、`Decimal`、`ID`/`Id`、`Int`/`Integer`、`String`。别名是否具有完全相同的未来语义尚未冻结；模拟值只支持 Boolean 和 Integer 两组。
+当前内建类型名：`Bool`/`Boolean`、`Decimal`、`ID`/`Id`、`Int`/`Integer`、`String`。静态检查把 `Bool`/`Boolean`、`Int`/`Integer` 和 `ID`/`Id` 分别视为同一 canonical 类型；模拟值仍只支持 Boolean 和 Integer 两组。
 
 ### Action
 
@@ -75,7 +75,7 @@ effects {
 }
 ```
 
-赋值操作符为 `=`、`+=`、`-=`。effect 目标必须从 action 参数开始并指向字段。模拟时复合赋值只支持 Integer。
+赋值操作符为 `=`、`+=`、`-=`。effect 目标必须从 action 参数开始并指向字段。`=` 要求目标与值属于同一 canonical 标量或同一 enum；`+=/-=` 的目标和值都必须是 Integer。
 
 ### Scenario
 
@@ -107,6 +107,8 @@ left <= right
 ```
 
 没有算术表达式、逻辑连接、括号优先级、字符串字面量、调用表达式或集合。二元表达式不递归组合；不要根据未来预期自行扩展 grammar。
+
+谓词必须产生 Boolean。`==/!=` 要求两侧是同一 canonical 标量或同一 enum；`<`、`<=`、`>`、`>=` 只接受 Integer 或 Decimal。非负 Integer 字面量在明确的 Decimal 比较或赋值上下文中是精确 Decimal 常量，例如 `balance >= 0` 和 `effects account.balance = 0` 合法；Integer 路径与 Decimal 路径之间没有隐式转换。Entity 只能作为字段路径中间类型，不能整体比较或赋值。
 
 ## 5. 兼容容器
 

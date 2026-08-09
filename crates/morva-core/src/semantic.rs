@@ -3,10 +3,6 @@ use std::collections::HashMap;
 use crate::Diagnostic;
 use crate::ast::*;
 
-const BUILTIN_TYPES: &[&str] = &[
-    "Bool", "Boolean", "Decimal", "ID", "Id", "Int", "Integer", "String",
-];
-
 #[derive(Clone, Copy)]
 enum TypeDeclaration<'a> {
     Entity(&'a Entity),
@@ -31,9 +27,30 @@ struct ExecutableIndex<'a> {
     scenarios: HashMap<&'a str, Vec<&'a Scenario>>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BuiltinType {
+    Boolean,
+    Decimal,
+    Id,
+    Integer,
+    String,
+}
+
+impl BuiltinType {
+    fn display(self) -> &'static str {
+        match self {
+            Self::Boolean => "Boolean",
+            Self::Decimal => "Decimal",
+            Self::Id => "ID",
+            Self::Integer => "Integer",
+            Self::String => "String",
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum ResolvedType<'a> {
-    Builtin,
+    Builtin(BuiltinType),
     Entity(&'a Entity),
     Enum(&'a Enum),
 }
@@ -136,11 +153,11 @@ fn check_global_type_ambiguities(index: &TypeIndex<'_>, diagnostics: &mut Vec<Di
     let mut ambiguous = index
         .declarations
         .iter()
-        .filter(|(name, candidates)| candidates.len() > 1 || BUILTIN_TYPES.contains(name))
+        .filter(|(name, candidates)| candidates.len() > 1 || resolve_builtin(name).is_some())
         .collect::<Vec<_>>();
     ambiguous.sort_by_key(|(_, candidates)| candidates[0].name().span.start);
     for (name, candidates) in ambiguous {
-        let message = if BUILTIN_TYPES.contains(name) {
+        let message = if resolve_builtin(name).is_some() {
             format!("type name '{name}' conflicts with a built-in type")
         } else {
             format!(
@@ -229,6 +246,17 @@ fn check_scope(
 }
 
 fn check_scenario(
+    scenario: &Scenario,
+    types: &TypeIndex<'_>,
+    executables: &ExecutableIndex<'_>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let first_scenario_diagnostic = diagnostics.len();
+    check_scenario_items(scenario, types, executables, diagnostics);
+    diagnostics[first_scenario_diagnostic..].sort_by_key(|diagnostic| diagnostic.span.start);
+}
+
+fn check_scenario_items(
     scenario: &Scenario,
     types: &TypeIndex<'_>,
     executables: &ExecutableIndex<'_>,
@@ -437,12 +465,12 @@ fn check_scenario_value(
                 unsupported_scenario_value(value, diagnostics);
             }
         }
-        Some(ResolvedType::Builtin) if matches!(type_name.text.as_str(), "Bool" | "Boolean") => {
+        Some(ResolvedType::Builtin(BuiltinType::Boolean)) => {
             if !matches!(value.kind, ExprKind::Boolean(_)) {
                 unsupported_scenario_value(value, diagnostics);
             }
         }
-        Some(ResolvedType::Builtin) if matches!(type_name.text.as_str(), "Int" | "Integer") => {
+        Some(ResolvedType::Builtin(BuiltinType::Integer)) => {
             if !matches!(value.kind, ExprKind::Integer(_)) {
                 unsupported_scenario_value(value, diagnostics);
             }
@@ -524,13 +552,7 @@ fn check_action(action: &Action, index: &TypeIndex<'_>, diagnostics: &mut Vec<Di
                 ClauseExpression::Assignment(assignment) => {
                     let expected =
                         check_effect_target(&assignment.target, &parameters, index, diagnostics);
-                    check_assignment_value(
-                        &assignment.value,
-                        expected,
-                        &parameters,
-                        index,
-                        diagnostics,
-                    );
+                    check_assignment_value(assignment, expected, &parameters, index, diagnostics);
                 }
             }
         }
@@ -538,7 +560,7 @@ fn check_action(action: &Action, index: &TypeIndex<'_>, diagnostics: &mut Vec<Di
 }
 
 fn check_type_name(name: &Name, index: &TypeIndex<'_>, diagnostics: &mut Vec<Diagnostic>) {
-    if BUILTIN_TYPES.contains(&name.text.as_str()) {
+    if resolve_builtin(&name.text).is_some() {
         return;
     }
     match index.declarations.get(name.text.as_str()) {
@@ -561,8 +583,8 @@ fn check_type_name(name: &Name, index: &TypeIndex<'_>, diagnostics: &mut Vec<Dia
 }
 
 fn resolve_type<'a>(name: &Name, index: &'a TypeIndex<'a>) -> Option<ResolvedType<'a>> {
-    if BUILTIN_TYPES.contains(&name.text.as_str()) {
-        return Some(ResolvedType::Builtin);
+    if let Some(builtin) = resolve_builtin(&name.text) {
+        return Some(ResolvedType::Builtin(builtin));
     }
     let candidates = index.declarations.get(name.text.as_str())?;
     if candidates.len() != 1 {
@@ -574,6 +596,17 @@ fn resolve_type<'a>(name: &Name, index: &'a TypeIndex<'a>) -> Option<ResolvedTyp
     })
 }
 
+fn resolve_builtin(name: &str) -> Option<BuiltinType> {
+    match name {
+        "Bool" | "Boolean" => Some(BuiltinType::Boolean),
+        "Decimal" => Some(BuiltinType::Decimal),
+        "ID" | "Id" => Some(BuiltinType::Id),
+        "Int" | "Integer" => Some(BuiltinType::Integer),
+        "String" => Some(BuiltinType::String),
+        _ => None,
+    }
+}
+
 fn check_predicate(
     expression: &Expr,
     fields: &HashMap<&str, &Field>,
@@ -581,13 +614,28 @@ fn check_predicate(
     index: &TypeIndex<'_>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    if let ExprKind::Binary { left, right, .. } = &expression.kind {
+    if let ExprKind::Binary {
+        left,
+        operator,
+        right,
+    } = &expression.kind
+    {
         let left = resolve_operand(left, fields, parameters, index, diagnostics);
         let right = resolve_operand(right, fields, parameters, index, diagnostics);
         match (left, right) {
             (Operand::Unbound(name), Operand::Typed(Some(ResolvedType::Enum(enumeration))))
             | (Operand::Typed(Some(ResolvedType::Enum(enumeration))), Operand::Unbound(name)) => {
-                check_enum_member(name, enumeration, diagnostics)
+                let diagnostic_count = diagnostics.len();
+                check_enum_member(name, enumeration, diagnostics);
+                if diagnostics.len() == diagnostic_count {
+                    check_binary_types(
+                        expression,
+                        *operator,
+                        ResolvedType::Enum(enumeration),
+                        ResolvedType::Enum(enumeration),
+                        diagnostics,
+                    );
+                }
             }
             (Operand::Unbound(left), Operand::Unbound(right)) => {
                 unknown_reference(left, diagnostics);
@@ -596,25 +644,194 @@ fn check_predicate(
             (Operand::Unbound(name), _) | (_, Operand::Unbound(name)) => {
                 unknown_reference(name, diagnostics)
             }
+            (Operand::Typed(Some(left)), Operand::Typed(Some(right))) => {
+                check_binary_types(expression, *operator, left, right, diagnostics)
+            }
             _ => {}
         }
-    } else if let Operand::Unbound(name) =
-        resolve_operand(expression, fields, parameters, index, diagnostics)
+    } else {
+        match resolve_operand(expression, fields, parameters, index, diagnostics) {
+            Operand::Unbound(name) => unknown_reference(name, diagnostics),
+            Operand::Typed(Some(resolved)) if !is_boolean(resolved) => {
+                diagnostics.push(Diagnostic::new(
+                    "MORVA2013",
+                    format!(
+                        "predicate must evaluate to Boolean, found {}",
+                        type_display(resolved)
+                    ),
+                    expression.span,
+                ));
+            }
+            Operand::Typed(_) => {}
+        }
+    }
+}
+
+fn check_binary_types(
+    expression: &Expr,
+    operator: BinaryOperator,
+    left: ResolvedType<'_>,
+    right: ResolvedType<'_>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if matches!(operator, BinaryOperator::Equal | BinaryOperator::NotEqual)
+        && (!is_scalar_or_enum(left)
+            || (left != right && !has_decimal_integer_constant(expression, left, right)))
     {
-        unknown_reference(name, diagnostics);
+        diagnostics.push(Diagnostic::new(
+            "MORVA2014",
+            format!(
+                "operator '{}' requires compatible operand types, found {} and {}",
+                binary_operator_display(operator),
+                type_display(left),
+                type_display(right)
+            ),
+            expression.span,
+        ));
+    } else if !matches!(operator, BinaryOperator::Equal | BinaryOperator::NotEqual)
+        && !ordered_types_are_compatible(expression, left, right)
+    {
+        diagnostics.push(Diagnostic::new(
+            "MORVA2015",
+            format!(
+                "operator '{}' requires Integer or Decimal operands, found {} and {}",
+                binary_operator_display(operator),
+                type_display(left),
+                type_display(right)
+            ),
+            expression.span,
+        ));
+    }
+}
+
+fn ordered_types_are_compatible(
+    expression: &Expr,
+    left: ResolvedType<'_>,
+    right: ResolvedType<'_>,
+) -> bool {
+    let same_numeric_type = left == right
+        && matches!(
+            left,
+            ResolvedType::Builtin(BuiltinType::Integer | BuiltinType::Decimal)
+        );
+    if same_numeric_type {
+        return true;
+    }
+    has_decimal_integer_constant(expression, left, right)
+}
+
+fn has_decimal_integer_constant(
+    expression: &Expr,
+    left: ResolvedType<'_>,
+    right: ResolvedType<'_>,
+) -> bool {
+    let ExprKind::Binary {
+        left: left_expression,
+        right: right_expression,
+        ..
+    } = &expression.kind
+    else {
+        return false;
+    };
+    matches!(
+        (left, right, &left_expression.kind, &right_expression.kind),
+        (
+            ResolvedType::Builtin(BuiltinType::Decimal),
+            ResolvedType::Builtin(BuiltinType::Integer),
+            _,
+            ExprKind::Integer(_)
+        ) | (
+            ResolvedType::Builtin(BuiltinType::Integer),
+            ResolvedType::Builtin(BuiltinType::Decimal),
+            ExprKind::Integer(_),
+            _
+        )
+    )
+}
+
+fn is_scalar_or_enum(resolved: ResolvedType<'_>) -> bool {
+    matches!(resolved, ResolvedType::Builtin(_) | ResolvedType::Enum(_))
+}
+
+fn binary_operator_display(operator: BinaryOperator) -> &'static str {
+    match operator {
+        BinaryOperator::Equal => "==",
+        BinaryOperator::NotEqual => "!=",
+        BinaryOperator::Greater => ">",
+        BinaryOperator::GreaterEqual => ">=",
+        BinaryOperator::Less => "<",
+        BinaryOperator::LessEqual => "<=",
     }
 }
 
 fn check_assignment_value(
-    expression: &Expr,
+    assignment: &Assignment,
     expected: Option<ResolvedType<'_>>,
     parameters: &HashMap<&str, &Parameter>,
     index: &TypeIndex<'_>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
+    let expression = &assignment.value;
     let fields = HashMap::new();
+    if assignment.operator != AssignmentOperator::Set {
+        let actual = if matches!(expression.kind, ExprKind::Binary { .. }) {
+            let diagnostic_count = diagnostics.len();
+            check_predicate(expression, &fields, parameters, index, diagnostics);
+            if diagnostics.len() != diagnostic_count {
+                return;
+            }
+            ResolvedType::Builtin(BuiltinType::Boolean)
+        } else {
+            match resolve_operand(expression, &fields, parameters, index, diagnostics) {
+                Operand::Unbound(name) => {
+                    if let Some(ResolvedType::Enum(enumeration)) = expected {
+                        let diagnostic_count = diagnostics.len();
+                        check_enum_member(name, enumeration, diagnostics);
+                        if diagnostics.len() != diagnostic_count {
+                            return;
+                        }
+                        ResolvedType::Enum(enumeration)
+                    } else {
+                        unknown_reference(name, diagnostics);
+                        return;
+                    }
+                }
+                Operand::Typed(Some(actual)) => actual,
+                Operand::Typed(None) => return,
+            }
+        };
+        let Some(expected) = expected else {
+            return;
+        };
+        if !matches!(expected, ResolvedType::Builtin(BuiltinType::Integer))
+            || !matches!(actual, ResolvedType::Builtin(BuiltinType::Integer))
+        {
+            diagnostics.push(Diagnostic::new(
+                "MORVA2017",
+                format!(
+                    "operator '{}' requires Integer target and value, found {} and {}",
+                    assignment_operator_display(assignment.operator),
+                    type_display(expected),
+                    type_display(actual)
+                ),
+                assignment.span,
+            ));
+        }
+        return;
+    }
     if matches!(expression.kind, ExprKind::Binary { .. }) {
+        let diagnostic_count = diagnostics.len();
         check_predicate(expression, &fields, parameters, index, diagnostics);
+        if diagnostics.len() == diagnostic_count
+            && let Some(expected) = expected
+        {
+            check_set_compatibility(
+                expression,
+                expected,
+                ResolvedType::Builtin(BuiltinType::Boolean),
+                diagnostics,
+            );
+        }
         return;
     }
     match resolve_operand(expression, &fields, parameters, index, diagnostics) {
@@ -625,7 +842,47 @@ fn check_assignment_value(
                 unknown_reference(name, diagnostics);
             }
         }
-        Operand::Typed(_) => {}
+        Operand::Typed(Some(actual)) => {
+            if let Some(expected) = expected {
+                check_set_compatibility(expression, expected, actual, diagnostics);
+            }
+        }
+        Operand::Typed(None) => {}
+    }
+}
+
+fn assignment_operator_display(operator: AssignmentOperator) -> &'static str {
+    match operator {
+        AssignmentOperator::Set => "=",
+        AssignmentOperator::Add => "+=",
+        AssignmentOperator::Subtract => "-=",
+    }
+}
+
+fn check_set_compatibility(
+    expression: &Expr,
+    expected: ResolvedType<'_>,
+    actual: ResolvedType<'_>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let decimal_integer_constant = matches!(
+        (expected, actual, &expression.kind),
+        (
+            ResolvedType::Builtin(BuiltinType::Decimal),
+            ResolvedType::Builtin(BuiltinType::Integer),
+            ExprKind::Integer(_)
+        )
+    );
+    if !decimal_integer_constant && (!is_scalar_or_enum(expected) || expected != actual) {
+        diagnostics.push(Diagnostic::new(
+            "MORVA2016",
+            format!(
+                "cannot assign {} to target of type {}",
+                type_display(actual),
+                type_display(expected)
+            ),
+            expression.span,
+        ));
     }
 }
 
@@ -637,9 +894,22 @@ fn resolve_operand<'a, 'b>(
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Operand<'a, 'b> {
     match &expression.kind {
-        ExprKind::Integer(_) | ExprKind::Boolean(_) => Operand::Typed(Some(ResolvedType::Builtin)),
+        ExprKind::Integer(_) => Operand::Typed(Some(ResolvedType::Builtin(BuiltinType::Integer))),
+        ExprKind::Boolean(_) => Operand::Typed(Some(ResolvedType::Builtin(BuiltinType::Boolean))),
         ExprKind::Path(path) => resolve_path(path, fields, parameters, index, diagnostics),
         ExprKind::Binary { .. } => Operand::Typed(None),
+    }
+}
+
+fn is_boolean(resolved: ResolvedType<'_>) -> bool {
+    matches!(resolved, ResolvedType::Builtin(BuiltinType::Boolean))
+}
+
+fn type_display(resolved: ResolvedType<'_>) -> &str {
+    match resolved {
+        ResolvedType::Builtin(builtin) => builtin.display(),
+        ResolvedType::Entity(entity) => &entity.name.text,
+        ResolvedType::Enum(enumeration) => &enumeration.name.text,
     }
 }
 

@@ -76,6 +76,8 @@ grill / challenge / review（规划中）
 - 检查重复声明、字段、参数和枚举成员。
 - 检查未知类型、全局短类型歧义、内建类型冲突。
 - 检查字段路径、effect 写目标和上下文枚举成员。
+- 规范化 builtin 别名；要求谓词为 Boolean、比较操作数兼容、普通 effect 同型且复合 effect 仅用于 Integer。
+- Decimal 比较或赋值上下文可把非负 Integer 字面量作为精确常量；Integer 路径与 Decimal 路径不隐式转换。
 - 检查 scenario 顺序、action 选择、参数数量、实参唯一性与可模拟类型。
 - 当前检查器不得被描述为形式化证明或完整静态类型系统。
 

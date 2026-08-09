@@ -824,3 +824,68 @@ fn fail(
     });
     report
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn runtime_equality_evaluator_rejects_different_value_types() {
+        let left = Expr {
+            kind: ExprKind::Integer(1),
+            span: Span { start: 4, end: 5 },
+        };
+        let right = Expr {
+            kind: ExprKind::Boolean(true),
+            span: Span { start: 9, end: 13 },
+        };
+        let comparison_span = Span { start: 4, end: 13 };
+        let context = EvaluationContext::default();
+        let state = BTreeMap::new();
+        let model = Model {
+            actions: HashMap::new(),
+            scenarios: HashMap::new(),
+            entities: HashMap::new(),
+            enums: HashMap::new(),
+        };
+
+        let error = evaluate_binary(
+            &left,
+            BinaryOperator::Equal,
+            &right,
+            comparison_span,
+            &context,
+            &state,
+            &model,
+        )
+        .expect_err("runtime equality guard must reject different value types");
+
+        assert_eq!(
+            error.message,
+            "equality comparison requires values of the same type"
+        );
+        assert_eq!(error.span, comparison_span);
+    }
+
+    #[test]
+    fn runtime_effect_guard_preserves_expected_field_type() {
+        let model = Model {
+            actions: HashMap::new(),
+            scenarios: HashMap::new(),
+            entities: HashMap::new(),
+            enums: HashMap::new(),
+        };
+        let integer = Name {
+            text: "Integer".to_owned(),
+            span: Span::default(),
+        };
+        let int_alias = Name {
+            text: "Int".to_owned(),
+            span: Span::default(),
+        };
+        assert!(ensure_value_type(&Value::Integer(1), &int_alias, &model, Span::default()).is_ok());
+        let error = ensure_value_type(&Value::Boolean(true), &integer, &model, Span::default())
+            .expect_err("runtime guard must reject a mismatched effect value");
+        assert_eq!(error.message, "value is not compatible with type 'Integer'");
+    }
+}
