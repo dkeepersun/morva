@@ -285,6 +285,23 @@ fn booleans_and_other_keywords_cannot_be_names() {
 }
 
 #[test]
+fn scenario_item_keywords_are_contextual_names() {
+    let source = r#"system Shop {
+  enum State { given }
+  entity Job { run: Boolean }
+  action Check(expect: Job) {}
+  scenario Case {
+    given given.run = true
+    run Check(given)
+    expect given.run == true
+  }
+}
+"#;
+    let document = parse(source).expect("scenario item keywords remain contextual");
+    assert!(check(&document).is_empty());
+}
+
+#[test]
 fn out_of_range_integer_is_a_diagnostic_not_a_panic() {
     let source = "system Shop { action Check { requires 999999999999999999999999999 } }";
     assert_eq!(

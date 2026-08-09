@@ -106,6 +106,7 @@ impl Parser {
             "entity" => self.entity(kind_token.span, name),
             "enum" => self.enumeration(kind_token.span, name),
             "action" => self.action(kind_token.span, name),
+            "scenario" => self.scenario(kind_token.span, name),
             _ => self.container(kind_token.span, kind, name),
         }
     }
@@ -310,6 +311,71 @@ impl Parser {
             self.newlines();
         }
         Ok(parameters)
+    }
+
+    fn scenario(&mut self, start: Span, name: Name) -> Result<Declaration, Vec<Diagnostic>> {
+        self.expect_block("expected scenario block")?;
+        let mut items = Vec::new();
+        loop {
+            self.newlines();
+            if self.at_eof() {
+                return Err(self.error("MORVA1003", "unclosed scenario block"));
+            }
+            if self.at_symbol('}') {
+                self.bump();
+                break;
+            }
+            if self.at_identifier("given") {
+                self.bump();
+                let assignment = self.assignment()?;
+                self.line_end("unexpected token after given")?;
+                items.push(ScenarioItem::Given(assignment));
+            } else if self.at_identifier("run") {
+                items.push(ScenarioItem::Run(self.run_item()?));
+            } else if self.at_identifier("expect") {
+                self.bump();
+                let expression = self.expression()?;
+                self.line_end("unexpected token after expect")?;
+                items.push(ScenarioItem::Expect(expression));
+            } else {
+                return Err(self.error("MORVA1021", "unknown item in scenario block"));
+            }
+        }
+        Ok(Declaration::Scenario(Scenario {
+            name,
+            items,
+            span: Span {
+                start: start.start,
+                end: self.previous().span.end,
+            },
+        }))
+    }
+
+    fn run_item(&mut self) -> Result<Run, Vec<Diagnostic>> {
+        let start = self.bump().span;
+        let action = self.reference_name("expected an action name after run")?;
+        self.expect_symbol('(', "MORVA1022", "expected '(' after run action")?;
+        let mut arguments = Vec::new();
+        self.newlines();
+        if !self.at_symbol(')') {
+            loop {
+                arguments.push(self.declared_name("expected a run argument name")?);
+                self.newlines();
+                if self.at_symbol(')') {
+                    break;
+                }
+                self.expect_symbol(',', "MORVA1023", "expected ',' or ')' after run argument")?;
+                self.newlines();
+            }
+        }
+        self.expect_symbol(')', "MORVA1023", "expected ')' after run arguments")?;
+        let end = self.previous().span;
+        self.line_end("unexpected token after run")?;
+        Ok(Run {
+            action,
+            arguments,
+            span: Span::covering(start, end),
+        })
     }
 
     fn clause(&mut self, kind: ClauseKind) -> Result<Clause, Vec<Diagnostic>> {

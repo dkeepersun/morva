@@ -4,7 +4,8 @@ use std::process::ExitCode;
 
 use morva_core::{
     Action, AssignmentOperator, BinaryOperator, ClauseExpression, Declaration, Diagnostic,
-    Document, Entity, Enum, Expr, ExprKind, check, parse,
+    Document, Entity, Enum, Expr, ExprKind, Scenario, ScenarioItem, SimulationReport, Span, check,
+    parse, simulate,
 };
 
 fn main() -> ExitCode {
@@ -17,10 +18,53 @@ fn main() -> ExitCode {
         [command, path] if command == "check" || command == "parse" || command == "inspect" => {
             run(command, path)
         }
+        [command, path, scenario] if command == "simulate" => run_simulation(path, scenario),
         _ => {
             help();
             ExitCode::from(2)
         }
+    }
+}
+
+fn run_simulation(path: &str, scenario: &str) -> ExitCode {
+    let source = match fs::read_to_string(path) {
+        Ok(source) => source,
+        Err(error) => {
+            eprintln!("error: cannot read {path}: {error}");
+            return ExitCode::from(2);
+        }
+    };
+    let document = match parse(&source) {
+        Ok(document) => document,
+        Err(diagnostics) => {
+            render_diagnostics(path, &source, &diagnostics);
+            return ExitCode::FAILURE;
+        }
+    };
+    let diagnostics = check(&document);
+    if !diagnostics.is_empty() {
+        render_diagnostics(path, &source, &diagnostics);
+        return ExitCode::FAILURE;
+    }
+    let report = match simulate(&document, scenario) {
+        Ok(report) => report,
+        Err(diagnostic) => {
+            render_diagnostics(path, &source, &[diagnostic]);
+            return ExitCode::FAILURE;
+        }
+    };
+    print_simulation(&report);
+    if let Some(failure) = &report.failure {
+        render_simulation_failure(
+            path,
+            &source,
+            failure.phase.as_str(),
+            &failure.message,
+            failure.span,
+        );
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
     }
 }
 
@@ -70,6 +114,24 @@ fn render_diagnostics(path: &str, source: &str, diagnostics: &[Diagnostic]) {
             "^".repeat(visual_len)
         );
     }
+}
+
+fn render_simulation_failure(path: &str, source: &str, phase: &str, message: &str, span: Span) {
+    let (line, column, line_start, line_end) = location(source, span.start);
+    let source_line = &source.as_bytes()[line_start..line_end];
+    let marker_start = span.start.saturating_sub(line_start);
+    let marker_end = span.end.saturating_sub(line_start);
+    let (rendered, visual_start, visual_len) =
+        render_source_line(source_line, marker_start, marker_end);
+    eprintln!("simulation[{phase}]: {message}");
+    eprintln!("  --> {}:{line}:{column}", safe_path(path));
+    eprintln!("   |");
+    eprintln!("{line:>3} | {rendered}");
+    eprintln!(
+        "   | {}{}",
+        " ".repeat(visual_start),
+        "^".repeat(visual_len)
+    );
 }
 
 fn safe_path(path: &str) -> String {
@@ -148,10 +210,36 @@ fn print_declaration(declaration: &Declaration, depth: usize) {
         Declaration::Entity(entity) => print_entity(entity, depth),
         Declaration::Enum(enumeration) => print_enum(enumeration, depth),
         Declaration::Action(action) => print_action(action, depth),
+        Declaration::Scenario(scenario) => print_scenario(scenario, depth),
         _ => {
             println!("{indent}{} {}", declaration.kind(), declaration.name().text);
             for child in declaration.declarations() {
                 print_declaration(child, depth + 1);
+            }
+        }
+    }
+}
+
+fn print_scenario(scenario: &Scenario, depth: usize) {
+    let indent = "  ".repeat(depth);
+    println!("{indent}scenario {}", scenario.name.text);
+    for item in &scenario.items {
+        match item {
+            ScenarioItem::Given(assignment) => println!(
+                "{indent}  given {}",
+                format_clause_expression(&ClauseExpression::Assignment(assignment.clone()))
+            ),
+            ScenarioItem::Run(run) => println!(
+                "{indent}  run {}({})",
+                run.action.text,
+                run.arguments
+                    .iter()
+                    .map(|item| item.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            ScenarioItem::Expect(expression) => {
+                println!("{indent}  expect {}", format_expr(expression));
             }
         }
     }
@@ -244,11 +332,13 @@ fn inspect_document(document: &Document) {
     let mut enumerations = Vec::new();
     let mut entities = Vec::new();
     let mut actions = Vec::new();
+    let mut scenarios = Vec::new();
     collect_semantic_items(
         &document.declarations,
         &mut enumerations,
         &mut entities,
         &mut actions,
+        &mut scenarios,
     );
     let system = document
         .declarations
@@ -296,6 +386,23 @@ fn inspect_document(document: &Document) {
             counts(morva_core::ClauseKind::Invariant)
         );
     }
+    println!("scenarios: {}", scenarios.len());
+    for scenario in scenarios {
+        let givens = scenario
+            .items
+            .iter()
+            .filter(|item| matches!(item, ScenarioItem::Given(_)))
+            .count();
+        let expects = scenario
+            .items
+            .iter()
+            .filter(|item| matches!(item, ScenarioItem::Expect(_)))
+            .count();
+        println!(
+            "  {}: {} given(s), 1 run, {} expect(s)",
+            scenario.name.text, givens, expects
+        );
+    }
 }
 
 fn collect_semantic_items<'a>(
@@ -303,20 +410,57 @@ fn collect_semantic_items<'a>(
     enumerations: &mut Vec<&'a Enum>,
     entities: &mut Vec<&'a Entity>,
     actions: &mut Vec<&'a Action>,
+    scenarios: &mut Vec<&'a Scenario>,
 ) {
     for declaration in declarations {
         match declaration {
             Declaration::Enum(enumeration) => enumerations.push(enumeration),
             Declaration::Entity(entity) => entities.push(entity),
             Declaration::Action(action) => actions.push(action),
+            Declaration::Scenario(scenario) => scenarios.push(scenario),
             _ => {}
         }
-        collect_semantic_items(declaration.declarations(), enumerations, entities, actions);
+        collect_semantic_items(
+            declaration.declarations(),
+            enumerations,
+            entities,
+            actions,
+            scenarios,
+        );
     }
+}
+
+fn print_simulation(report: &SimulationReport) {
+    println!("scenario: {}", report.scenario);
+    println!("action: {}", report.action);
+    println!("phases:");
+    for phase in &report.phases {
+        println!(
+            "  {}: {}",
+            phase.phase.as_str(),
+            if phase.passed { "PASS" } else { "FAIL" }
+        );
+    }
+    println!("changes:");
+    for change in &report.changes {
+        let before = change
+            .before
+            .as_ref()
+            .map_or_else(|| "<unset>".to_owned(), ToString::to_string);
+        println!("  {}: {before} -> {}", change.path, change.after);
+    }
+    println!("state:");
+    for (path, value) in &report.state {
+        println!("  {path}: {value}");
+    }
+    println!(
+        "result: {}",
+        if report.succeeded() { "PASS" } else { "FAIL" }
+    );
 }
 
 fn help() {
     println!(
-        "Morva semantic model tools\n\nUsage:\n  morva check <file>\n  morva parse <file>\n  morva inspect <file>\n  morva help"
+        "Morva semantic model tools\n\nUsage:\n  morva check <file>\n  morva parse <file>\n  morva inspect <file>\n  morva simulate <file> <scenario>\n  morva help"
     );
 }

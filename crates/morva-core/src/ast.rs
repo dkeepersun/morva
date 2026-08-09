@@ -31,6 +31,7 @@ pub enum Declaration {
     Entity(Entity),
     Enum(Enum),
     Action(Action),
+    Scenario(Scenario),
     Container(Container),
 }
 
@@ -41,6 +42,7 @@ impl Declaration {
             Self::Entity(_) => "entity",
             Self::Enum(_) => "enum",
             Self::Action(_) => "action",
+            Self::Scenario(_) => "scenario",
             Self::Container(item) => &item.kind,
         }
     }
@@ -51,6 +53,7 @@ impl Declaration {
             Self::Entity(item) => &item.name,
             Self::Enum(item) => &item.name,
             Self::Action(item) => &item.name,
+            Self::Scenario(item) => &item.name,
             Self::Container(item) => &item.name,
         }
     }
@@ -61,6 +64,7 @@ impl Declaration {
             Self::Entity(item) => item.span,
             Self::Enum(item) => item.span,
             Self::Action(item) => item.span,
+            Self::Scenario(item) => item.span,
             Self::Container(item) => item.span,
         }
     }
@@ -69,7 +73,7 @@ impl Declaration {
         match self {
             Self::System(item) => &item.declarations,
             Self::Container(item) => &item.declarations,
-            Self::Entity(_) | Self::Enum(_) | Self::Action(_) => &[],
+            Self::Entity(_) | Self::Enum(_) | Self::Action(_) | Self::Scenario(_) => &[],
         }
     }
 }
@@ -123,6 +127,37 @@ pub struct Action {
 pub struct Parameter {
     pub name: Name,
     pub type_name: Name,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Scenario {
+    pub name: Name,
+    pub items: Vec<ScenarioItem>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScenarioItem {
+    Given(Assignment),
+    Run(Run),
+    Expect(Expr),
+}
+
+impl ScenarioItem {
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Given(item) => item.span,
+            Self::Run(item) => item.span,
+            Self::Expect(item) => item.span,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Run {
+    pub action: Name,
+    pub arguments: Vec<Name>,
     pub span: Span,
 }
 

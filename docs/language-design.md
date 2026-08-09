@@ -51,6 +51,12 @@ clause      = ("requires" | "effects" | "ensures" | "invariant"),
               (expression | "{", { expression, line-end }, "}") ;
 expression  = path | integer | boolean | expression, comparison, expression ;
 path        = identifier, { ".", identifier } ;
+scenario    = "scenario", identifier, "{",
+              { "given", path, "=", value, line-end },
+              "run", identifier, "(", [ identifier, { ",", identifier } ], ")", line-end,
+              "expect", expression, line-end,
+              { "expect", expression, line-end }, "}" ;
+value       = enum-member | boolean | integer ;
 ```
 
 An `effects` expression is an assignment (`=`, `+=`, or `-=`). Its target must be a field path rooted at an action parameter.
@@ -72,7 +78,15 @@ Morva does not yet implement module lookup rules. If compatibility containers in
 
 ## Simulation boundary
 
-`simulate` will walk a scenario, flow, or lifecycle against an explicit initial model state and show state changes, events, failures, expectations, and invariant results. It will not run application code, access production infrastructure, or become a general runtime.
+`simulate` executes the current scenario shape against isolated in-memory state:
+
+```text
+given* → exactly one run → expect+
+```
+
+Run arguments bind positionally to distinct entity instances for a single action. `given` initializes direct fields with enum members, Boolean, or Integer values. Execution applies givens, initial entity invariants, requires and action invariants, ordered effects, final action/entity invariants, ensures, then expects. All reads must already be initialized, and Integer compound assignments use checked arithmetic.
+
+Simulation does not support scalar action parameters, aliases, multiple actions, flows, lifecycles, cross-scenario state, external I/O, or application code. It is a model-level interpreter, not a general runtime.
 
 ## Implementation hints
 

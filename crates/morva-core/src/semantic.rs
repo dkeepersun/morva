@@ -26,6 +26,11 @@ struct TypeIndex<'a> {
     declarations: HashMap<&'a str, Vec<TypeDeclaration<'a>>>,
 }
 
+struct ExecutableIndex<'a> {
+    actions: HashMap<&'a str, Vec<&'a Action>>,
+    scenarios: HashMap<&'a str, Vec<&'a Scenario>>,
+}
+
 #[derive(Clone, Copy)]
 enum ResolvedType<'a> {
     Builtin,
@@ -59,8 +64,72 @@ pub(crate) fn check(document: &Document) -> Vec<Diagnostic> {
     };
     collect_types(&document.declarations, &mut index);
     check_global_type_ambiguities(&index, &mut diagnostics);
-    check_scope(&document.declarations, "document", &index, &mut diagnostics);
+    let mut executables = ExecutableIndex {
+        actions: HashMap::new(),
+        scenarios: HashMap::new(),
+    };
+    collect_executables(&document.declarations, &mut executables);
+    check_global_executable_ambiguities(&executables, &mut diagnostics);
+    check_scope(
+        &document.declarations,
+        "document",
+        &index,
+        &executables,
+        &mut diagnostics,
+    );
     diagnostics
+}
+
+fn collect_executables<'a>(declarations: &'a [Declaration], index: &mut ExecutableIndex<'a>) {
+    for declaration in declarations {
+        match declaration {
+            Declaration::Action(action) => index
+                .actions
+                .entry(&action.name.text)
+                .or_default()
+                .push(action),
+            Declaration::Scenario(scenario) => index
+                .scenarios
+                .entry(&scenario.name.text)
+                .or_default()
+                .push(scenario),
+            _ => {}
+        }
+        collect_executables(declaration.declarations(), index);
+    }
+}
+
+fn check_global_executable_ambiguities(
+    index: &ExecutableIndex<'_>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let mut duplicates = Vec::new();
+    for (name, actions) in &index.actions {
+        if actions.len() > 1 {
+            duplicates.push((
+                actions[1].name.span.start,
+                Diagnostic::new(
+                    "MORVA3001",
+                    format!("action name '{name}' is globally ambiguous"),
+                    actions[1].name.span,
+                ),
+            ));
+        }
+    }
+    for (name, scenarios) in &index.scenarios {
+        if scenarios.len() > 1 {
+            duplicates.push((
+                scenarios[1].name.span.start,
+                Diagnostic::new(
+                    "MORVA3002",
+                    format!("scenario name '{name}' is globally ambiguous"),
+                    scenarios[1].name.span,
+                ),
+            ));
+        }
+    }
+    duplicates.sort_by_key(|(offset, _)| *offset);
+    diagnostics.extend(duplicates.into_iter().map(|(_, diagnostic)| diagnostic));
 }
 
 fn check_global_type_ambiguities(index: &TypeIndex<'_>, diagnostics: &mut Vec<Diagnostic>) {
@@ -127,6 +196,7 @@ fn check_scope(
     declarations: &[Declaration],
     scope: &str,
     index: &TypeIndex<'_>,
+    executables: &ExecutableIndex<'_>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     let mut names = HashMap::new();
@@ -143,15 +213,250 @@ fn check_scope(
             Declaration::Entity(entity) => check_entity(entity, index, diagnostics),
             Declaration::Enum(enumeration) => check_enum(enumeration, diagnostics),
             Declaration::Action(action) => check_action(action, index, diagnostics),
+            Declaration::Scenario(scenario) => {
+                check_scenario(scenario, index, executables, diagnostics)
+            }
             Declaration::System(_) | Declaration::Container(_) => {}
         }
         check_scope(
             declaration.declarations(),
             &format!("{} '{}'", declaration.kind(), name.text),
             index,
+            executables,
             diagnostics,
         );
     }
+}
+
+fn check_scenario(
+    scenario: &Scenario,
+    types: &TypeIndex<'_>,
+    executables: &ExecutableIndex<'_>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let mut run_count = 0;
+    let mut expect_count = 0;
+    let mut seen_run = false;
+    let mut seen_expect = false;
+    for item in &scenario.items {
+        match item {
+            ScenarioItem::Given(assignment) => {
+                if seen_run || seen_expect {
+                    diagnostics.push(Diagnostic::new(
+                        "MORVA3003",
+                        "given items must appear before run",
+                        assignment.span,
+                    ));
+                }
+            }
+            ScenarioItem::Run(run) => {
+                run_count += 1;
+                if seen_run || seen_expect {
+                    diagnostics.push(Diagnostic::new(
+                        "MORVA3004",
+                        "scenario must contain exactly one run before expects",
+                        run.span,
+                    ));
+                }
+                seen_run = true;
+            }
+            ScenarioItem::Expect(expect) => {
+                expect_count += 1;
+                if !seen_run {
+                    diagnostics.push(Diagnostic::new(
+                        "MORVA3005",
+                        "expect items must appear after run",
+                        expect.span,
+                    ));
+                }
+                seen_expect = true;
+            }
+        }
+    }
+    if run_count != 1 {
+        diagnostics.push(Diagnostic::new(
+            "MORVA3004",
+            format!("scenario must contain exactly one run, found {run_count}"),
+            scenario.name.span,
+        ));
+    }
+    if expect_count == 0 {
+        diagnostics.push(Diagnostic::new(
+            "MORVA3005",
+            "scenario must contain at least one expect",
+            scenario.name.span,
+        ));
+    }
+    if run_count != 1 {
+        return;
+    }
+    let run = scenario
+        .items
+        .iter()
+        .find_map(|item| match item {
+            ScenarioItem::Run(run) => Some(run),
+            _ => None,
+        })
+        .expect("one run");
+    let Some(actions) = executables.actions.get(run.action.text.as_str()) else {
+        diagnostics.push(Diagnostic::new(
+            "MORVA3006",
+            format!("unknown action '{}'", run.action.text),
+            run.action.span,
+        ));
+        return;
+    };
+    if actions.len() != 1 {
+        diagnostics.push(Diagnostic::new(
+            "MORVA3006",
+            format!("action '{}' is ambiguous", run.action.text),
+            run.action.span,
+        ));
+        return;
+    }
+    let action = actions[0];
+    if run.arguments.len() != action.parameters.len() {
+        diagnostics.push(Diagnostic::new(
+            "MORVA3007",
+            format!(
+                "action '{}' expects {} argument(s), found {}",
+                action.name.text,
+                action.parameters.len(),
+                run.arguments.len()
+            ),
+            run.span,
+        ));
+        return;
+    }
+    let mut arguments = HashMap::new();
+    let mut runtime_parameters = HashMap::new();
+    for (argument, parameter) in run.arguments.iter().zip(&action.parameters) {
+        if arguments.contains_key(argument.text.as_str()) {
+            diagnostics.push(Diagnostic::new(
+                "MORVA3008",
+                format!("run argument '{}' must be unique", argument.text),
+                argument.span,
+            ));
+            continue;
+        }
+        match resolve_type(&parameter.type_name, types) {
+            Some(ResolvedType::Entity(entity)) => {
+                arguments.insert(argument.text.as_str(), entity);
+                runtime_parameters.insert(argument.text.as_str(), parameter);
+            }
+            _ => diagnostics.push(Diagnostic::new(
+                "MORVA3009",
+                format!(
+                    "action parameter '{}' must have an entity type for simulation",
+                    parameter.name.text
+                ),
+                run.span,
+            )),
+        }
+    }
+    let empty_fields = HashMap::new();
+    for item in &scenario.items {
+        match item {
+            ScenarioItem::Given(assignment) => {
+                check_given(assignment, &arguments, types, diagnostics)
+            }
+            ScenarioItem::Expect(expect) => check_predicate(
+                expect,
+                &empty_fields,
+                &runtime_parameters,
+                types,
+                diagnostics,
+            ),
+            ScenarioItem::Run(_) => {}
+        }
+    }
+}
+
+fn check_given(
+    assignment: &Assignment,
+    arguments: &HashMap<&str, &Entity>,
+    types: &TypeIndex<'_>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if assignment.operator != AssignmentOperator::Set {
+        diagnostics.push(Diagnostic::new(
+            "MORVA3010",
+            "given only supports '=' initialization",
+            assignment.span,
+        ));
+    }
+    if assignment.target.segments.len() != 2 {
+        diagnostics.push(Diagnostic::new(
+            "MORVA3011",
+            "given target must be a run argument field",
+            assignment.target.span,
+        ));
+        return;
+    }
+    let root = &assignment.target.segments[0];
+    let Some(entity) = arguments.get(root.text.as_str()) else {
+        diagnostics.push(Diagnostic::new(
+            "MORVA3011",
+            format!("unknown run argument '{}'", root.text),
+            root.span,
+        ));
+        return;
+    };
+    let field_name = &assignment.target.segments[1];
+    let Some(field) = entity
+        .fields
+        .iter()
+        .find(|field| field.name.text == field_name.text)
+    else {
+        diagnostics.push(Diagnostic::new(
+            "MORVA3011",
+            format!(
+                "entity '{}' has no field named '{}'",
+                entity.name.text, field_name.text
+            ),
+            field_name.span,
+        ));
+        return;
+    };
+    check_scenario_value(&assignment.value, &field.type_name, types, diagnostics);
+}
+
+fn check_scenario_value(
+    value: &Expr,
+    type_name: &Name,
+    types: &TypeIndex<'_>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    match resolve_type(type_name, types) {
+        Some(ResolvedType::Enum(enumeration)) => {
+            if let ExprKind::Path(path) = &value.kind
+                && path.segments.len() == 1
+            {
+                check_enum_member(&path.segments[0], enumeration, diagnostics);
+            } else {
+                unsupported_scenario_value(value, diagnostics);
+            }
+        }
+        Some(ResolvedType::Builtin) if matches!(type_name.text.as_str(), "Bool" | "Boolean") => {
+            if !matches!(value.kind, ExprKind::Boolean(_)) {
+                unsupported_scenario_value(value, diagnostics);
+            }
+        }
+        Some(ResolvedType::Builtin) if matches!(type_name.text.as_str(), "Int" | "Integer") => {
+            if !matches!(value.kind, ExprKind::Integer(_)) {
+                unsupported_scenario_value(value, diagnostics);
+            }
+        }
+        _ => unsupported_scenario_value(value, diagnostics),
+    }
+}
+
+fn unsupported_scenario_value(value: &Expr, diagnostics: &mut Vec<Diagnostic>) {
+    diagnostics.push(Diagnostic::new(
+        "MORVA3012",
+        "scenario values are limited to enum members, Boolean, and Integer",
+        value.span,
+    ));
 }
 
 fn check_enum(enumeration: &Enum, diagnostics: &mut Vec<Diagnostic>) {

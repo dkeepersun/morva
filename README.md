@@ -14,7 +14,7 @@ The current v0.1 scope is intentionally small:
 - fields, parameters, enum members, and `requires`, `effects`, `ensures`, and `invariant` clauses;
 - duplicate-name, type, field-path, enum-member, and effect-target checks;
 - deterministic `check`, `parse`, and `inspect` commands with source diagnostics;
-- a future lightweight model-level `simulate`, not a production runtime;
+- pure in-memory simulation for one-action scenarios using enum, Boolean, and Integer state;
 - compatibility parsing for broader declarations and documented soft behavior already used by the example.
 
 Formal verification, code generation, infrastructure configuration, and a large keyword taxonomy are explicitly out of scope for v0.1.
@@ -25,6 +25,7 @@ Formal verification, code generation, infrastructure configuration, and a large 
 cargo run -p morva-cli -- check examples/order.morva
 cargo run -p morva-cli -- parse examples/order.morva
 cargo run -p morva-cli -- inspect examples/order.morva
+cargo run -p morva-cli -- simulate examples/order.morva NormalConfirmation
 ```
 
 Example:
