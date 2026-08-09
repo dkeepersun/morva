@@ -8,6 +8,10 @@ use morva_core::{
     parse, simulate,
 };
 
+const MAX_DIAGNOSTIC_WIDTH: usize = 160;
+const LEFT_CONTEXT_WIDTH: usize = 72;
+const ELLIPSIS: &str = "...";
+
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
     match args.as_slice() {
@@ -30,7 +34,7 @@ fn run_simulation(path: &str, scenario: &str) -> ExitCode {
     let source = match fs::read_to_string(path) {
         Ok(source) => source,
         Err(error) => {
-            eprintln!("error: cannot read {path}: {error}");
+            eprintln!("error: cannot read {}: {error}", safe_path(path));
             return ExitCode::from(2);
         }
     };
@@ -72,7 +76,7 @@ fn run(command: &str, path: &str) -> ExitCode {
     let source = match fs::read_to_string(path) {
         Ok(source) => source,
         Err(error) => {
-            eprintln!("error: cannot read {path}: {error}");
+            eprintln!("error: cannot read {}: {error}", safe_path(path));
             return ExitCode::from(2);
         }
     };
@@ -91,47 +95,61 @@ fn run(command: &str, path: &str) -> ExitCode {
     match command {
         "parse" => print_document(&document),
         "inspect" => inspect_document(&document),
-        _ => println!("ok: {path}"),
+        _ => println!("ok: {}", safe_path(path)),
     }
     ExitCode::SUCCESS
 }
 
 fn render_diagnostics(path: &str, source: &str, diagnostics: &[Diagnostic]) {
     for diagnostic in diagnostics {
-        let (line, column, line_start, line_end) = location(source, diagnostic.span.start);
-        let source_line = &source.as_bytes()[line_start..line_end];
-        let marker_start = diagnostic.span.start.saturating_sub(line_start);
-        let marker_end = diagnostic.span.end.saturating_sub(line_start);
-        let (rendered, visual_start, visual_len) =
-            render_source_line(source_line, marker_start, marker_end);
+        let view = source_view(source, diagnostic.span);
         eprintln!("{diagnostic}");
-        eprintln!("  --> {}:{line}:{column}", safe_path(path));
+        eprintln!("  --> {}:{}:{}", safe_path(path), view.line, view.column);
         eprintln!("   |");
-        eprintln!("{line:>3} | {rendered}");
+        eprintln!("{:>3} | {}", view.line, view.rendered);
         eprintln!(
             "   | {}{}",
-            " ".repeat(visual_start),
-            "^".repeat(visual_len)
+            " ".repeat(view.marker_start),
+            "^".repeat(view.marker_len)
         );
     }
 }
 
 fn render_simulation_failure(path: &str, source: &str, phase: &str, message: &str, span: Span) {
-    let (line, column, line_start, line_end) = location(source, span.start);
-    let source_line = &source.as_bytes()[line_start..line_end];
-    let marker_start = span.start.saturating_sub(line_start);
-    let marker_end = span.end.saturating_sub(line_start);
-    let (rendered, visual_start, visual_len) =
-        render_source_line(source_line, marker_start, marker_end);
+    let view = source_view(source, span);
     eprintln!("simulation[{phase}]: {message}");
-    eprintln!("  --> {}:{line}:{column}", safe_path(path));
+    eprintln!("  --> {}:{}:{}", safe_path(path), view.line, view.column);
     eprintln!("   |");
-    eprintln!("{line:>3} | {rendered}");
+    eprintln!("{:>3} | {}", view.line, view.rendered);
     eprintln!(
         "   | {}{}",
-        " ".repeat(visual_start),
-        "^".repeat(visual_len)
+        " ".repeat(view.marker_start),
+        "^".repeat(view.marker_len)
     );
+}
+
+struct SourceView {
+    line: usize,
+    column: usize,
+    rendered: String,
+    marker_start: usize,
+    marker_len: usize,
+}
+
+fn source_view(source: &str, span: Span) -> SourceView {
+    let (line, column, line_start) = location(source, span.start);
+    let source_line = &source.as_bytes()[line_start..];
+    let marker_start = span.start.saturating_sub(line_start);
+    let marker_end = span.end.saturating_sub(line_start);
+    let (rendered, marker_start, marker_len) =
+        render_source_line(source_line, marker_start, marker_end);
+    SourceView {
+        line,
+        column,
+        rendered,
+        marker_start,
+        marker_len,
+    }
 }
 
 fn safe_path(path: &str) -> String {
@@ -146,16 +164,12 @@ fn safe_path(path: &str) -> String {
         .collect()
 }
 
-fn location(source: &str, offset: usize) -> (usize, usize, usize, usize) {
+fn location(source: &str, offset: usize) -> (usize, usize, usize) {
     let offset = offset.min(source.len());
     let line_start = source.as_bytes()[..offset]
         .iter()
         .rposition(|byte| *byte == b'\n')
         .map_or(0, |index| index + 1);
-    let line_end = source.as_bytes()[offset..]
-        .iter()
-        .position(|byte| *byte == b'\n')
-        .map_or(source.len(), |index| offset + index);
     let line = source.as_bytes()[..line_start]
         .iter()
         .filter(|byte| **byte == b'\n')
@@ -167,7 +181,7 @@ fn location(source: &str, offset: usize) -> (usize, usize, usize, usize) {
         .take_while(|item| *item != '\n')
         .count()
         + 1;
-    (line, column, line_start, line_end)
+    (line, column, line_start)
 }
 
 fn render_source_line(
@@ -175,27 +189,111 @@ fn render_source_line(
     marker_start: usize,
     marker_end: usize,
 ) -> (String, usize, usize) {
-    let marker_start = marker_start.min(line.len());
-    let marker_end = marker_end.max(marker_start + 1).min(line.len());
-    let mut rendered = String::new();
-    let mut visual_start = 0;
-    let mut visual_len = 0;
-    for (index, byte) in line.iter().copied().enumerate() {
-        let fragment = match byte {
-            b'\t' => "    ".to_owned(),
-            0x20..=0x7e => (byte as char).to_string(),
-            _ => format!("\\x{byte:02X}"),
-        };
-        let width = fragment.len();
-        if index < marker_start {
-            visual_start += width;
+    let raw_marker_start = marker_start.min(line.len());
+    let marker_at_line_end = raw_marker_start == line.len()
+        || line.get(raw_marker_start) == Some(&b'\n')
+        || (line.get(raw_marker_start) == Some(&b'\r')
+            && line.get(raw_marker_start.saturating_add(1)) == Some(&b'\n'));
+    let marker_start = if line.get(raw_marker_start) == Some(&b'\n')
+        && raw_marker_start > 0
+        && line[raw_marker_start - 1] == b'\r'
+    {
+        raw_marker_start - 1
+    } else {
+        raw_marker_start
+    };
+    let marker_end = marker_end
+        .max(raw_marker_start.saturating_add(1))
+        .min(line.len());
+
+    let mut window_start = marker_start;
+    let mut left_width = 0usize;
+    while window_start > 0 {
+        let width = fragment_width(line[window_start - 1]);
+        if left_width.saturating_add(width) > LEFT_CONTEXT_WIDTH {
+            break;
         }
-        if index >= marker_start && index < marker_end {
-            visual_len += width;
-        }
-        rendered.push_str(&fragment);
+        window_start -= 1;
+        left_width += width;
     }
-    (rendered, visual_start, visual_len.max(1))
+    let left_ellipsis = window_start > 0;
+    let prefix_width = usize::from(left_ellipsis) * ELLIPSIS.len();
+    let excerpt_limit = MAX_DIAGNOSTIC_WIDTH
+        .checked_sub(usize::from(marker_at_line_end))
+        .expect("diagnostic width leaves room for an EOF marker");
+    let available_width = excerpt_limit
+        .checked_sub(prefix_width)
+        .expect("diagnostic width leaves room for a left ellipsis");
+
+    let mut window_end = window_start;
+    let mut content_width = 0usize;
+    let mut reached_line_end = false;
+    while window_end < line.len() {
+        if line[window_end] == b'\n'
+            || (line[window_end] == b'\r' && line.get(window_end.saturating_add(1)) == Some(&b'\n'))
+        {
+            reached_line_end = true;
+            break;
+        }
+        let width = fragment_width(line[window_end]);
+        if content_width.saturating_add(width) > available_width {
+            break;
+        }
+        content_width += width;
+        window_end += 1;
+    }
+    if window_end == line.len() {
+        reached_line_end = true;
+    }
+    let right_ellipsis = !reached_line_end;
+    if right_ellipsis {
+        let content_limit = available_width
+            .checked_sub(ELLIPSIS.len())
+            .expect("diagnostic width leaves room for a right ellipsis");
+        while content_width > content_limit {
+            window_end -= 1;
+            content_width -= fragment_width(line[window_end]);
+        }
+    }
+
+    let mut rendered = String::with_capacity(MAX_DIAGNOSTIC_WIDTH);
+    if left_ellipsis {
+        rendered.push_str(ELLIPSIS);
+    }
+    for byte in &line[window_start..window_end] {
+        match byte {
+            b'\t' => rendered.push_str("    "),
+            0x20..=0x7e => rendered.push(*byte as char),
+            _ => rendered.push_str(&format!("\\x{byte:02X}")),
+        }
+    }
+    if right_ellipsis {
+        rendered.push_str(ELLIPSIS);
+    }
+
+    let visual_start = prefix_width
+        + line[window_start..marker_start.min(window_end)]
+            .iter()
+            .map(|byte| fragment_width(*byte))
+            .sum::<usize>();
+    let visible_marker_end = marker_end.min(window_end);
+    let visual_len = if marker_start < visible_marker_end {
+        line[marker_start..visible_marker_end]
+            .iter()
+            .map(|byte| fragment_width(*byte))
+            .sum()
+    } else {
+        1
+    };
+    (rendered, visual_start, visual_len)
+}
+
+fn fragment_width(byte: u8) -> usize {
+    match byte {
+        b'\t' => 4,
+        0x20..=0x7e => 1,
+        _ => 4,
+    }
 }
 
 fn print_document(document: &Document) {

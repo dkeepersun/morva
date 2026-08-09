@@ -38,6 +38,8 @@ cargo run -p morva-cli -- simulate examples/order.morva NormalConfirmation
 4. CLI 映射到正确退出码并安全渲染输入。
 5. 与已有示例和兼容边界不冲突。
 
+诊断呈现变更还必须通过真实 CLI 进程覆盖：超长行的起点/中间/末尾/EOF、159/160/161 渲染宽度、左上下文 72/73 宽度、长或跨行 span、tab/control/non-ASCII 转义片段、CRLF 与 EOF 前孤立 CR、模拟失败，以及成功/读取失败/模型失败/运行时失败中的 UTF-8 路径控制字符。源码 excerpt 和 marker 的 160 字符上限应分别断言；这不等同于总 stderr 上限。CR-only 仍是独立语言契约，不得由呈现测试隐式定义。
+
 可执行语义还必须覆盖：成功、每个失败阶段、未初始化状态、顺序性、溢出/边界值、类型不匹配和失败后的状态报告。
 
 ## 4. 回归原则

@@ -13,7 +13,8 @@
 - Scenario 结构、action 选择、arity、entity 参数绑定和 given 值检查。
 - `check`、`parse`、`inspect`、`simulate` CLI 与稳定退出码。
 - 单 action、纯内存、enum/Boolean/Integer 状态模拟及七个阶段。
-- 72 个自动化测试：62 个 core 语法/语义/模拟公开 API 集成测试、2 个 core runtime guard 单元测试、8 个 CLI 进程级测试。
+- 85 个自动化测试：62 个 core 语法/语义/模拟公开 API 集成测试、2 个 core runtime guard 单元测试、21 个 CLI 进程级测试。
+- 普通诊断和模拟失败共享有界源码窗口；excerpt 与 marker 分别不超过 160 个渲染字符，CRLF 终止符不回显，所有 UTF-8 路径输出安全转义控制字符。
 
 ## 兼容解析但没有专有语义
 
@@ -33,7 +34,7 @@
 - 标识符只支持 ASCII。
 - 没有负整数字面量；负值只可能由模拟中的 `-=` 产生。
 - CR-only 换行未作为单独语言契约验证。
-- CLI 当前会渲染完整源码行，极端超长单行需要后续增加窗口上限。
+- 有界窗口不是总 stderr 上限；诊断 message 和安全转义后的路径保持完整。
 
 ### 作用域与协议
 

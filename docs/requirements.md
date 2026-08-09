@@ -86,6 +86,7 @@ grill / challenge / review（规划中）
 - 语法、语义和模拟选择错误使用稳定的 `MORVA1xxx`、`MORVA2xxx/3xxx`、`MORVA4xxx` 代码空间。
 - CLI 诊断包含代码、消息、行列和源码标记。
 - tab、控制字节和文件路径必须安全显示，不能污染终端输出。
+- 每条源码 excerpt 和 marker 的显示内容分别不超过 160 个渲染字符；窗口必须保留错误起点和至少一个 caret，裁剪不得切断转义片段。
 
 ### FR-06 CLI
 
