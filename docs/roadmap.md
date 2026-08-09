@@ -8,8 +8,12 @@
 - [x] example, public API, and CLI integration tests
 - [x] define the minimal expression, type-reference, and diagnostic models
 - [x] validate names, types, field paths, contextual enum members, and effect targets
-- [ ] validate state transitions and obvious clause contradictions
 - [x] add single-action scenario simulation with explicit in-memory state
+
+The two approved v0.1 specifications are complete. The following remains a candidate
+for a separately approved semantic-core increment and does not block that baseline:
+
+- [ ] validate state transitions and obvious clause contradictions
 
 ## After the core is stable
 

@@ -85,16 +85,16 @@ context:
 **核心入口与语义边界**
 
 - 公共 API 保持 parse/check 两步闭环。
-  [`lib.rs:10`](../../crates/morva-core/src/lib.rs#L10)
+  [`lib.rs:14`](../../crates/morva-core/src/lib.rs#L14)
 
 - 单一 system、全局歧义类型和递归检查从这里汇合。
-  [`semantic.rs:41`](../../crates/morva-core/src/semantic.rs#L41)
+  [`semantic.rs:46`](../../crates/morva-core/src/semantic.rs#L46)
 
 - 裸标识符只在明确 enum 上下文中解析成员。
-  [`semantic.rs:272`](../../crates/morva-core/src/semantic.rs#L272)
+  [`semantic.rs:577`](../../crates/morva-core/src/semantic.rs#L577)
 
 - effects 目标提供赋值值所需的 enum 类型上下文。
-  [`semantic.rs:303`](../../crates/morva-core/src/semantic.rs#L303)
+  [`semantic.rs:608`](../../crates/morva-core/src/semantic.rs#L608)
 
 **语法模型与兼容边界**
 
@@ -102,24 +102,24 @@ context:
   [`parser.rs:98`](../../crates/morva-core/src/parser.rs#L98)
 
 - action 只白名单兼容已声明软行为，拒绝未知内容。
-  [`parser.rs:237`](../../crates/morva-core/src/parser.rs#L237)
+  [`parser.rs:238`](../../crates/morva-core/src/parser.rs#L238)
 
 - clause 支持单行或跨行块，同时保持表达式分隔明确。
-  [`parser.rs:315`](../../crates/morva-core/src/parser.rs#L315)
+  [`parser.rs:381`](../../crates/morva-core/src/parser.rs#L381)
 
 - 兼容容器缺块时停止，不能吞掉下一声明。
-  [`parser.rs:522`](../../crates/morva-core/src/parser.rs#L522)
+  [`parser.rs:127`](../../crates/morva-core/src/parser.rs#L127)
 
 **CLI 与诊断**
 
 - 三条命令共享同一解析和语义检查路径。
-  [`main.rs:27`](../../crates/morva-cli/src/main.rs#L27)
+  [`main.rs:71`](../../crates/morva-cli/src/main.rs#L71)
 
 - 诊断安全渲染 span、tab、控制字符和文件路径。
-  [`main.rs:55`](../../crates/morva-cli/src/main.rs#L55)
+  [`main.rs:99`](../../crates/morva-cli/src/main.rs#L99)
 
 - inspect 提供确定性文本语义摘要。
-  [`main.rs:243`](../../crates/morva-cli/src/main.rs#L243)
+  [`main.rs:331`](../../crates/morva-cli/src/main.rs#L331)
 
 **回归证据**
 

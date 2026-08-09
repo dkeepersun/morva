@@ -28,6 +28,10 @@ cargo run -p morva-cli -- inspect examples/order.morva
 cargo run -p morva-cli -- simulate examples/order.morva NormalConfirmation
 ```
 
+All four commands parse and semantically check the model first. `parse` prints the
+currently modeled AST surface; compatibility-only text that the parser deliberately
+ignores is not reproduced.
+
 Example:
 
 ```morva
@@ -50,7 +54,7 @@ system Shop {
 }
 ```
 
-See [the language draft](docs/language-design.md), [CLI design](docs/cli.md), [roadmap](docs/roadmap.md), and [naming review](docs/naming.md).
+Start with the [project documentation index](docs/index.md). The [requirements baseline](docs/requirements.md), [implementation status](docs/implementation-status.md), [architecture](docs/architecture.md), and [language reference](docs/language-reference.md) distinguish current guarantees from compatibility parsing and future plans.
 
 ## Repository layout
 

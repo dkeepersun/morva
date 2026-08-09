@@ -12,6 +12,10 @@ morva simulate <file> <scenario>  Run one checked scenario in memory
 morva help          Show concise usage
 ```
 
+`check`, `parse`, and `inspect` all parse and run the current semantic checker before
+producing success output. `parse` prints the typed AST surface that Morva currently
+models; it does not reproduce ignored compatibility-only text.
+
 Exit codes are `0` for success, `1` for invalid input, and `2` for command or file usage errors.
 Invalid input diagnostics include a stable code, line and column, and a source marker. Tabs are expanded and control bytes are escaped when a source line is displayed.
 
