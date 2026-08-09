@@ -82,6 +82,118 @@ fn existing_example_remains_valid() {
 }
 
 #[test]
+fn cr_only_newlines_separate_language_items_and_preserve_byte_spans() {
+    let source = "system Shop {\r  enum State {\r    Open\r    Closed\r  }\r}\r";
+    let document = parse(source).expect("CR-only model parses");
+    assert!(check(&document).is_empty());
+    let Declaration::System(system) = &document.declarations[0] else {
+        panic!("expected system");
+    };
+    let Declaration::Enum(enumeration) = &system.declarations[0] else {
+        panic!("expected enum");
+    };
+    assert_eq!(
+        enumeration
+            .members
+            .iter()
+            .map(|member| member.text.as_str())
+            .collect::<Vec<_>>(),
+        ["Open", "Closed"]
+    );
+    let closed_start = source.find("Closed").expect("Closed byte offset");
+    assert_eq!(enumeration.members[1].span.start, closed_start);
+    assert_eq!(
+        enumeration.members[1].span.end,
+        closed_start + "Closed".len()
+    );
+}
+
+#[test]
+fn line_comments_stop_before_every_supported_newline_sequence() {
+    for newline in ["\n", "\r\n", "\r"] {
+        let source = [
+            "system Shop {",
+            newline,
+            "  // retain the next declaration",
+            newline,
+            "  enum State { Open }",
+            newline,
+            "}",
+            newline,
+        ]
+        .concat();
+        let document = parse(&source).expect("comment ends at logical newline");
+        assert!(check(&document).is_empty());
+        let Declaration::System(system) = &document.declarations[0] else {
+            panic!("expected system");
+        };
+        assert!(matches!(system.declarations[0], Declaration::Enum(_)));
+    }
+}
+
+#[test]
+fn equivalent_newline_sequences_keep_model_shape_and_original_byte_spans() {
+    for newline in ["\n", "\r\n", "\r"] {
+        let source = [
+            "system Shop {",
+            newline,
+            "  enum State {",
+            newline,
+            "    Open",
+            newline,
+            "    Closed",
+            newline,
+            "  }",
+            newline,
+            "}",
+            newline,
+        ]
+        .concat();
+        let document = parse(&source).expect("equivalent model parses");
+        assert!(check(&document).is_empty());
+        assert_eq!(document.span.end, source.len());
+        let Declaration::System(system) = &document.declarations[0] else {
+            panic!("expected system");
+        };
+        let Declaration::Enum(enumeration) = &system.declarations[0] else {
+            panic!("expected enum");
+        };
+        assert_eq!(
+            enumeration
+                .members
+                .iter()
+                .map(|member| member.text.as_str())
+                .collect::<Vec<_>>(),
+            ["Open", "Closed"]
+        );
+        for member in &enumeration.members {
+            let start = source.find(&member.text).expect("member byte offset");
+            assert_eq!(member.span.start, start);
+            assert_eq!(member.span.end, start + member.text.len());
+        }
+    }
+}
+
+#[test]
+fn mixed_newline_sequences_are_single_logical_separators() {
+    let source =
+        "system Shop {\r  // mixed source\r\n  enum State {\n    Open\r    Closed\r\n  }\r}\n";
+    let document = parse(source).expect("mixed-newline model parses");
+    assert!(check(&document).is_empty());
+    let Declaration::System(system) = &document.declarations[0] else {
+        panic!("expected system");
+    };
+    let Declaration::Enum(enumeration) = &system.declarations[0] else {
+        panic!("expected enum");
+    };
+    assert_eq!(enumeration.members.len(), 2);
+    assert_eq!(
+        enumeration.members[1].span.start,
+        source.find("Closed").expect("Closed byte offset")
+    );
+}
+
+#[test]
 fn enum_members_require_the_expected_enum_context() {
     let source = r#"system Shop {
   enum OrderStatus { Pending }

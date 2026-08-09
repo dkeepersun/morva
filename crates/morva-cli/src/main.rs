@@ -166,21 +166,29 @@ fn safe_path(path: &str) -> String {
 
 fn location(source: &str, offset: usize) -> (usize, usize, usize) {
     let offset = offset.min(source.len());
-    let line_start = source.as_bytes()[..offset]
-        .iter()
-        .rposition(|byte| *byte == b'\n')
-        .map_or(0, |index| index + 1);
-    let line = source.as_bytes()[..line_start]
-        .iter()
-        .filter(|byte| **byte == b'\n')
-        .count()
-        + 1;
-    let column = source[..offset]
-        .chars()
-        .rev()
-        .take_while(|item| *item != '\n')
-        .count()
-        + 1;
+    let bytes = source.as_bytes();
+    let mut cursor = 0;
+    let mut line = 1;
+    let mut line_start = 0;
+    while cursor < offset {
+        match bytes[cursor] {
+            b'\r' if bytes.get(cursor + 1) == Some(&b'\n') => {
+                if cursor + 1 >= offset {
+                    break;
+                }
+                cursor += 2;
+                line += 1;
+                line_start = cursor;
+            }
+            b'\r' | b'\n' => {
+                cursor += 1;
+                line += 1;
+                line_start = cursor;
+            }
+            _ => cursor += 1,
+        }
+    }
+    let column = source[line_start..offset].chars().count() + 1;
     (line, column, line_start)
 }
 
@@ -190,10 +198,8 @@ fn render_source_line(
     marker_end: usize,
 ) -> (String, usize, usize) {
     let raw_marker_start = marker_start.min(line.len());
-    let marker_at_line_end = raw_marker_start == line.len()
-        || line.get(raw_marker_start) == Some(&b'\n')
-        || (line.get(raw_marker_start) == Some(&b'\r')
-            && line.get(raw_marker_start.saturating_add(1)) == Some(&b'\n'));
+    let marker_at_line_end =
+        raw_marker_start == line.len() || matches!(line.get(raw_marker_start), Some(b'\r' | b'\n'));
     let marker_start = if line.get(raw_marker_start) == Some(&b'\n')
         && raw_marker_start > 0
         && line[raw_marker_start - 1] == b'\r'
@@ -229,9 +235,7 @@ fn render_source_line(
     let mut content_width = 0usize;
     let mut reached_line_end = false;
     while window_end < line.len() {
-        if line[window_end] == b'\n'
-            || (line[window_end] == b'\r' && line.get(window_end.saturating_add(1)) == Some(&b'\n'))
-        {
+        if matches!(line[window_end], b'\r' | b'\n') {
             reached_line_end = true;
             break;
         }

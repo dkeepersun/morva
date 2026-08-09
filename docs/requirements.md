@@ -56,6 +56,7 @@ grill / challenge / review（规划中）
 - 项目、语言和命令统一使用 `Morva` / `morva`；`.morva` 是源码文件约定，当前 CLI 不按后缀拒绝输入。
 - 文档必须恰好包含一个顶层 `system`；禁止嵌套 `system`。
 - 标识符当前只支持 ASCII。
+- LF、CRLF、CR 各表示一个逻辑换行；CRLF 只产生一个换行 token，`//` 注释在任一换行前结束，span 保留原文件 byte offset。
 
 ### FR-02 强类型核心模型
 

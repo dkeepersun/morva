@@ -111,7 +111,7 @@ presentation     language semantics
 
 - 当前静态表达式类型检查只覆盖已有 literal/path/binary、谓词和 effect，不包含通用推断、逻辑/算术表达式、数据流分析或形式化证明。
 - Simulator 仍保留类型守卫作为纵深防御；其值域仍只含 enum、Boolean 和 Integer，不能由静态 Decimal 规则推导出 Decimal 模拟支持。
-- CR-only 换行、负整数字面量和超长单行诊断窗口尚未形成完整产品契约。
+- 负整数字面量尚未形成产品契约；有界诊断窗口不限制完整 message 或安全路径的总输出大小。
 - 模块作用域、稳定机器可读输出和增量分析均未设计。
 
 处理这些债务时必须先写失败测试和独立规格，不能借机扩大语言范围。

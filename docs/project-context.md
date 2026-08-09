@@ -33,6 +33,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - Preserve the expression type boundary: `Bool`/`Boolean`, `Int`/`Integer`, and `ID`/`Id` are canonical families; ordered comparison accepts Integer or Decimal, and a non-negative Integer literal is an exact Decimal constant only in an explicit Decimal operand or target context. Entity is path-only, not a comparable or assignable whole value.
 - Keep simulation to one action per scenario, direct entity fields, isolated in-memory enum/Boolean/Integer state, and the fixed seven phases. Never execute `implementation_hint`, user code, IO, or external state.
 - Preserve UTF-8 byte spans, stable diagnostic codes, CLI exit codes, deterministic ordering, and the meaning of `examples/order.morva`.
+- Treat LF, CRLF, and CR as one logical newline each; CRLF consumes two source bytes but one lexer token, and spans always remain offsets into the original unnormalized source.
 - Before changing syntax, CLI contracts, dependencies, simulation boundaries, names, or the meaning of an approved example, obtain human approval and create or update an implementation specification. Never edit an approved specification's frozen block to fit code.
 - Preserve existing worktree changes. Every behavior change requires focused tests and documentation, followed by `cargo fmt --check`, strict Clippy, workspace tests, and the relevant example commands.
 

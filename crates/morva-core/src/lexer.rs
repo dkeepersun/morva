@@ -23,14 +23,21 @@ pub(crate) fn lex(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
     while cursor < bytes.len() {
         let start = cursor;
         match bytes[cursor] {
-            b' ' | b'\t' | b'\r' => cursor += 1,
+            b' ' | b'\t' => cursor += 1,
+            b'\r' => {
+                cursor += 1;
+                if bytes.get(cursor) == Some(&b'\n') {
+                    cursor += 1;
+                }
+                tokens.push(token(TokenKind::Newline, start, cursor));
+            }
             b'\n' => {
                 cursor += 1;
                 tokens.push(token(TokenKind::Newline, start, cursor));
             }
             b'/' if bytes.get(cursor + 1) == Some(&b'/') => {
                 cursor += 2;
-                while cursor < bytes.len() && bytes[cursor] != b'\n' {
+                while cursor < bytes.len() && !matches!(bytes[cursor], b'\r' | b'\n') {
                     cursor += 1;
                 }
             }

@@ -17,7 +17,7 @@ producing success output. `parse` prints the typed AST surface that Morva curren
 models; it does not reproduce ignored compatibility-only text.
 
 Exit codes are `0` for success, `1` for invalid input, and `2` for command or file usage errors.
-Invalid input diagnostics include a stable code, line and column, and a source marker. Each displayed source excerpt and marker is limited to 160 rendered characters, keeps the error start visible, and uses `...` for cropped context. Tabs expand to four spaces while the reported logical column still counts each tab as one character; control and non-ASCII bytes are escaped without splitting an escape fragment. CRLF terminators are omitted from excerpts. This is not a total stderr limit: diagnostic messages and safely escaped UTF-8 paths are not truncated. Every CLI result safely escapes control characters in displayed paths.
+Invalid input diagnostics include a stable code, line and column, and a source marker. LF, CRLF, and CR each advance one logical line, including in mixed files; newline terminators are omitted from excerpts. Each displayed source excerpt and marker is limited to 160 rendered characters, keeps the error start visible, and uses `...` for cropped context. Tabs expand to four spaces while the reported logical column still counts each tab as one character; control and non-ASCII bytes are escaped without splitting an escape fragment. This is not a total stderr limit: diagnostic messages and safely escaped UTF-8 paths are not truncated. Every CLI result safely escapes control characters in displayed paths.
 
 ## Planned, not implemented
 

@@ -327,7 +327,43 @@ fn crlf_diagnostic_excludes_the_carriage_return_from_its_excerpt() {
 }
 
 #[test]
-fn carriage_return_at_eof_is_not_treated_as_a_crlf_terminator() {
+fn mixed_newlines_share_one_logical_line_and_excerpt_contract() {
+    let path = temporary_model(
+        "mixed-newlines",
+        b"system Shop {\r  enum State { Open }\r\n  entity Item { state: State }\n  action Check(item: Item) { requires item.state == Missing }\r}\n",
+    );
+    let output = morva(&["check", path.to_str().expect("UTF-8 path")]);
+    fs::remove_file(path).expect("remove fixture");
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = text(&output.stderr);
+    assert!(stderr.contains("error[MORVA2012]"));
+    assert!(stderr.contains(":4:53"));
+    assert!(stderr.contains("4 |   action Check(item: Item) { requires item.state == Missing }"));
+    assert!(!stderr.contains("\\x0D"));
+    assert!(!stderr.contains("Missing }\\x0D}"));
+}
+
+#[test]
+fn eof_after_each_newline_sequence_has_the_same_location_and_caret() {
+    for (label, newline) in [("lf", "\n"), ("crlf", "\r\n"), ("cr", "\r")] {
+        let source = format!("system Shop {{{newline}");
+        let path = temporary_model(&format!("newline-eof-{label}"), source.as_bytes());
+        let output = morva(&["check", path.to_str().expect("UTF-8 path")]);
+        fs::remove_file(path).expect("remove fixture");
+
+        assert_eq!(output.status.code(), Some(1));
+        let stderr = text(&output.stderr);
+        assert!(stderr.contains("error[MORVA1003]"));
+        assert!(stderr.contains(":2:1"), "{label}: {stderr:?}");
+        let (excerpt, marker) = diagnostic_content(&stderr, 2);
+        assert_eq!(excerpt, "");
+        assert_eq!(marker, "^");
+    }
+}
+
+#[test]
+fn carriage_return_at_eof_is_a_logical_line_terminator() {
     let path = temporary_model(
         "cr-at-eof",
         b"system Shop { action Confirm(order Order) {}\r",
@@ -338,7 +374,9 @@ fn carriage_return_at_eof_is_not_treated_as_a_crlf_terminator() {
     assert_eq!(output.status.code(), Some(1));
     let stderr = text(&output.stderr);
     assert!(stderr.contains("error[MORVA1008]"));
-    assert!(stderr.contains("1 | system Shop { action Confirm(order Order) {}\\x0D"));
+    assert!(stderr.contains(":1:36"));
+    assert!(stderr.contains("1 | system Shop { action Confirm(order Order) {}"));
+    assert!(!stderr.contains("\\x0D"));
     assert!(!stderr.contains('\r'));
 }
 
