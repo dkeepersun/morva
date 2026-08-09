@@ -3,11 +3,12 @@
 ## v0.1 — semantic core
 
 - [x] Rust workspace and CLI shell
-- [x] declaration lexer/parser and minimal AST
-- [x] basic structural semantic checks
-- [x] example model and parser tests
-- [ ] define expression, type, reference, and diagnostic models
-- [ ] validate types, references, states, and obvious clause contradictions
+- [x] spanned lexer/parser and strongly typed core AST
+- [x] structural, enum-member, and reference semantic checks
+- [x] example, public API, and CLI integration tests
+- [x] define the minimal expression, type-reference, and diagnostic models
+- [x] validate names, types, field paths, contextual enum members, and effect targets
+- [ ] validate state transitions and obvious clause contradictions
 - [ ] add small scenario/flow simulation with explicit state
 
 ## After the core is stable
@@ -19,4 +20,3 @@
 - Skill and MCP integration
 
 These are directions, not commitments for v0.1. Formal verification and implementation code generation remain outside the initial scope.
-

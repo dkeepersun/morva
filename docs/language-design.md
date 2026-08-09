@@ -32,7 +32,7 @@ atomic idempotent timeout retry
 implementation_hint
 ```
 
-The current parser recognizes declarations and balanced blocks. It does not yet assign executable meaning to clauses inside a block.
+The current semantic core models `system`, `entity`, `enum`, and `action`, including enum members, fields, parameters, and `requires`, `effects`, `ensures`, and `invariant` clauses. Broader declaration kinds remain compatibility containers. Within an action, only the documented soft items `atomic`, `idempotent`, `timeout`, `retry`, and `implementation_hint` may be ignored by the current semantic model; unknown items are errors.
 
 ## Sketch grammar
 
@@ -40,23 +40,35 @@ This is an orientation draft, not a frozen grammar:
 
 ```ebnf
 document    = { declaration } ;
-declaration = kind, identifier, [ parameter-list ], block ;
-kind        = "system" | "module" | "entity" | "enum"
-            | "service" | "action" | "event" | "flow"
-            | "lifecycle" | "scenario" | "policy" ;
-block       = "{", { token | declaration }, "}" ;
+system      = "system", identifier, "{", { declaration }, "}" ;
+enum        = "enum", identifier, "{", { identifier, line-end }, "}" ;
+entity      = "entity", identifier, "{", { field | invariant }, "}" ;
+field       = identifier, ":", identifier, line-end ;
+action      = "action", identifier, [ parameters ], "{", { clause | soft-item }, "}" ;
+parameters  = "(", [ parameter, { ",", parameter } ], ")" ;
+parameter   = identifier, ":", identifier ;
+clause      = ("requires" | "effects" | "ensures" | "invariant"),
+              (expression | "{", { expression, line-end }, "}") ;
+expression  = path | integer | boolean | expression, comparison, expression ;
+path        = identifier, { ".", identifier } ;
 ```
+
+An `effects` expression is an assignment (`=`, `+=`, or `-=`). Its target must be a field path rooted at an action parameter.
+
+A bare identifier is not a general symbolic value. It is valid only when a comparison or assignment supplies a specific expected enum type and that enum declares the member. For example, `order.status == Pending` resolves `Pending` through the `OrderStatus` type of `order.status`. A misspelled or wrong-enum member is an error.
 
 ## Validation boundary
 
-The first static analyzer should check syntax, names and references, basic types, state transitions, and obvious contradictory clauses. It is semantic static validation, not theorem proving.
-
-The present skeleton checks:
+The current analyzer performs semantic static validation, not theorem proving. It checks:
 
 - lexical and delimiter errors;
-- declaration shape;
-- duplicate declaration names within the same scope;
-- presence of exactly one top-level `system` declaration.
+- declaration, enum member, field, parameter, clause, path, comparison, and assignment shape;
+- duplicate declaration, enum member, field, and parameter names;
+- presence of exactly one top-level `system` and rejection of nested systems;
+- known and globally unambiguous short type names;
+- parameter/field paths, contextual enum members, and writable `effects` targets.
+
+Morva does not yet implement module lookup rules. If compatibility containers introduce multiple types with the same short name, use of that short name is rejected as ambiguous regardless of declaration order.
 
 ## Simulation boundary
 
@@ -78,4 +90,3 @@ Ignoring a hint may produce information or a warning, never a semantic error by 
 ## Deferred work
 
 Formal verification, code generation, security/SLA-specific keywords, compensation primitives, package management, macros, and deployment configuration remain deferred until real use cases justify them.
-

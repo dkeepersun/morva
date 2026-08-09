@@ -1,0 +1,341 @@
+use morva_core::{ClauseExpression, ClauseKind, Declaration, check, parse};
+
+const COMPLETE_MODEL: &str = r#"system Wallet {
+  enum AccountState {
+    Open
+    Frozen
+  }
+  entity Account {
+    id: ID
+    balance: Decimal
+    state: AccountState
+    invariant balance >= 0
+  }
+  action Freeze(account: Account) {
+    requires {
+      account.state == Open
+    }
+    effects {
+      account.state = Frozen
+    }
+    ensures {
+      Frozen == account.state
+    }
+  }
+}
+"#;
+
+fn codes(source: &str) -> Vec<&'static str> {
+    let document = parse(source).expect("valid syntax");
+    check(&document).into_iter().map(|item| item.code).collect()
+}
+
+#[test]
+fn parses_the_complete_strongly_typed_core() {
+    let document = parse(COMPLETE_MODEL).expect("valid model");
+    assert!(check(&document).is_empty());
+    let Declaration::System(system) = &document.declarations[0] else {
+        panic!("expected system");
+    };
+    let Declaration::Enum(enumeration) = &system.declarations[0] else {
+        panic!("expected enum");
+    };
+    assert_eq!(
+        enumeration
+            .members
+            .iter()
+            .map(|item| item.text.as_str())
+            .collect::<Vec<_>>(),
+        ["Open", "Frozen"]
+    );
+    let Declaration::Entity(entity) = &system.declarations[1] else {
+        panic!("expected entity");
+    };
+    assert_eq!(entity.fields.len(), 3);
+    assert_eq!(entity.invariants.len(), 1);
+    let Declaration::Action(action) = &system.declarations[2] else {
+        panic!("expected action");
+    };
+    assert_eq!(action.parameters.len(), 1);
+    assert_eq!(
+        action
+            .clauses
+            .iter()
+            .map(|item| item.kind)
+            .collect::<Vec<_>>(),
+        [
+            ClauseKind::Requires,
+            ClauseKind::Effects,
+            ClauseKind::Ensures
+        ]
+    );
+    assert!(matches!(
+        action.clauses[1].expressions[0],
+        ClauseExpression::Assignment(_)
+    ));
+}
+
+#[test]
+fn existing_example_remains_valid() {
+    let document = parse(include_str!("../../../examples/order.morva")).expect("example parses");
+    assert!(check(&document).is_empty());
+}
+
+#[test]
+fn enum_members_require_the_expected_enum_context() {
+    let source = r#"system Shop {
+  enum OrderStatus { Pending }
+  enum PaymentStatus { Paid }
+  entity Order { status: OrderStatus }
+  action Check(order: Order) {
+    requires order.status == Paid
+    effects order.status = Missing
+  }
+}
+"#;
+    let diagnostics = check(&parse(source).expect("valid syntax"));
+    assert_eq!(
+        diagnostics
+            .iter()
+            .filter(|item| item.code == "MORVA2012")
+            .count(),
+        2
+    );
+    assert!(diagnostics.iter().any(|item| item.message.contains("Paid")));
+    assert!(
+        diagnostics
+            .iter()
+            .any(|item| item.message.contains("Missing"))
+    );
+}
+
+#[test]
+fn unknown_bare_and_dotted_references_are_rejected() {
+    let source = r#"system Shop {
+  action Check {
+    requires Missing
+    ensures unknown.field == true
+  }
+}
+"#;
+    assert_eq!(
+        codes(source)
+            .into_iter()
+            .filter(|code| *code == "MORVA2009")
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn duplicate_names_and_unknown_types_are_reported() {
+    let source = r#"system Shop {
+  enum State {
+    Open
+    Open
+  }
+  entity Order {
+    id: Missing
+    id: ID
+  }
+  entity Order {}
+  action Use(x: Order, x: Order) {}
+}
+"#;
+    let diagnostics = check(&parse(source).expect("valid syntax"));
+    for code in [
+        "MORVA2003",
+        "MORVA2004",
+        "MORVA2005",
+        "MORVA2006",
+        "MORVA2007",
+    ] {
+        assert!(
+            diagnostics.iter().any(|item| item.code == code),
+            "missing {code}: {diagnostics:?}"
+        );
+    }
+}
+
+#[test]
+fn effects_must_write_a_parameter_field() {
+    let source = r#"system Shop {
+  entity Order { status: String }
+  action Change(order: Order) {
+    effects order = true
+    effects external.status = true
+  }
+}
+"#;
+    assert_eq!(
+        codes(source)
+            .into_iter()
+            .filter(|code| *code == "MORVA2011")
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn unknown_action_items_fail_but_documented_soft_items_remain_compatible() {
+    let accepted = r#"system Shop {
+  action Save {
+    atomic
+    idempotent by request.id
+    timeout 10
+    retry 2
+    implementation_hint {
+      storage: relational
+    }
+  }
+}
+"#;
+    let document = parse(accepted).expect("documented soft items parse");
+    assert!(check(&document).is_empty());
+
+    let rejected = "system Shop {\n  action Save {\n    require true\n  }\n}\n";
+    assert_eq!(
+        parse(rejected).expect_err("typo must fail")[0].code,
+        "MORVA1007"
+    );
+}
+
+#[test]
+fn a_container_missing_its_block_cannot_consume_the_next_declaration() {
+    let source = "system Shop {\n  module Orders\n  entity Order {}\n}\n";
+    let diagnostic = &parse(source).expect_err("missing block must fail")[0];
+    assert_eq!(diagnostic.code, "MORVA1016");
+    assert_eq!(
+        diagnostic.span.start,
+        source.find("entity").expect("entity keyword")
+    );
+}
+
+#[test]
+fn declaration_blocks_may_start_on_the_next_line() {
+    let source = r#"system Shop
+{
+  enum State
+  {
+    Ready
+  }
+  entity Item
+  {
+    state: State
+  }
+  action Check(item: Item)
+  {
+    requires item.state == Ready
+  }
+}
+"#;
+    let document = parse(source).expect("next-line blocks remain compatible");
+    assert!(check(&document).is_empty());
+}
+
+#[test]
+fn clause_blocks_may_start_on_the_next_line() {
+    let source = r#"system Shop {
+  action Check {
+    requires
+    {
+      true
+    }
+  }
+}
+"#;
+    let document = parse(source).expect("next-line clause block parses");
+    assert!(check(&document).is_empty());
+}
+
+#[test]
+fn a_same_line_declaration_cannot_become_a_missing_container_block() {
+    let source = "system Shop { module Orders entity Order {} }";
+    assert_eq!(
+        parse(source).expect_err("missing module block must fail")[0].code,
+        "MORVA1016"
+    );
+}
+
+#[test]
+fn an_action_without_parentheses_is_compatible() {
+    let document = parse("system Shop { action Refresh {} }").expect("action parses");
+    assert!(check(&document).is_empty());
+    let Declaration::System(system) = &document.declarations[0] else {
+        panic!("expected system");
+    };
+    let Declaration::Action(action) = &system.declarations[0] else {
+        panic!("expected action");
+    };
+    assert!(action.parameters.is_empty());
+}
+
+#[test]
+fn booleans_and_other_keywords_cannot_be_names() {
+    for source in [
+        "system true {}",
+        "system Shop { entity false {} }",
+        "system Shop { entity Order { action: String } }",
+    ] {
+        assert_eq!(
+            parse(source).expect_err("reserved name must fail")[0].code,
+            "MORVA1019"
+        );
+    }
+}
+
+#[test]
+fn out_of_range_integer_is_a_diagnostic_not_a_panic() {
+    let source = "system Shop { action Check { requires 999999999999999999999999999 } }";
+    assert_eq!(
+        parse(source).expect_err("overflow must fail")[0].code,
+        "MORVA1012"
+    );
+}
+
+#[test]
+fn nested_systems_are_rejected() {
+    let source = "system Outer { module Inner { system Nested {} } }";
+    assert!(codes(source).contains(&"MORVA2002"));
+}
+
+#[test]
+fn exactly_one_system_must_be_at_the_document_root() {
+    assert!(codes("entity Loose {}").contains(&"MORVA2001"));
+    assert!(codes("system One {} system Two {}").contains(&"MORVA2001"));
+}
+
+#[test]
+fn globally_ambiguous_short_type_names_are_rejected() {
+    let first = r#"system Shop {
+  module A { entity Item {} }
+  module B { entity Item {} }
+}
+"#;
+    let second = r#"system Shop {
+  module B { entity Item {} }
+  module A { entity Item {} }
+}
+"#;
+    assert!(codes(first).contains(&"MORVA2008"));
+    assert!(codes(second).contains(&"MORVA2008"));
+}
+
+#[test]
+fn user_types_cannot_shadow_builtin_types() {
+    assert!(codes("system Shop { entity String {} }").contains(&"MORVA2008"));
+}
+
+#[test]
+fn non_ascii_diagnostics_cover_the_complete_codepoint() {
+    let diagnostic = &parse("system Café {}").expect_err("non-ASCII name must fail")[0];
+    assert_eq!(diagnostic.span.end - diagnostic.span.start, 'é'.len_utf8());
+}
+
+#[test]
+fn incomplete_syntax_has_a_span() {
+    let diagnostic =
+        &parse("system Shop { entity Order { id ID } }").expect_err("missing colon must fail")[0];
+    assert_eq!(diagnostic.code, "MORVA1006");
+    assert!(diagnostic.span.end > diagnostic.span.start);
+}

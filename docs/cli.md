@@ -6,11 +6,13 @@ The executable is `morva`. Commands should be scriptable, deterministic, and qui
 
 ```text
 morva check <file>  Parse and run current semantic checks
-morva parse <file>  Print the declaration tree
+morva parse <file>  Print declarations, enum members, fields, parameters, and clauses
+morva inspect <file>  Print a stable text summary of the semantic model
 morva help          Show concise usage
 ```
 
 Exit codes are `0` for success, `1` for invalid input, and `2` for command or file usage errors.
+Invalid input diagnostics include a stable code, line and column, and a source marker. Tabs are expanded and control bytes are escaped when a source line is displayed.
 
 ## Planned, not implemented
 
@@ -22,4 +24,3 @@ morva map <file>
 ```
 
 Machine-readable diagnostics and configuration should be introduced only when editor or automation integration begins.
-
