@@ -2,7 +2,7 @@
 title: '项目文档与 AI 交接基线收口'
 type: 'chore'
 created: '2026-08-10'
-status: 'in-progress'
+status: 'done'
 baseline_commit: 'ae90f8d6126eb99cec6f4388ece790b04cf53e8d'
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/spec-v0-1-minimal-semantic-core.md'
@@ -65,7 +65,8 @@ context:
 
 ## Spec Change Log
 
-- 2026-08-10：文档事实、入口、AI 上下文、扫描状态和评审锚点已收口；链接、格式、严格 Clippy、50 个测试及四命令示例闭环均通过。独立阶段提交留待获授权的提交步骤。
+- 2026-08-10：文档事实、入口、AI 上下文、扫描状态和评审锚点已收口；链接、格式、严格 Clippy、50 个测试及四命令示例闭环均通过；文档基线已形成独立阶段提交 `29a7bed`。
+- 2026-08-10 review：验收审查发现 README 与语言设计遗漏强类型 `scenario`，盲审发现扫描报告包含本机绝对路径、裸输出路径、验证证据不足及 CLI 呈现兼容边界含糊；已修正文档事实、改用仓库相对路径、记录可复现命令，并明确稳定输出边界。KEEP：完整 AI 规则、v0.1 完成口径、冻结意图和已验证链接必须保留。
 
 ## Design Notes
 
@@ -80,3 +81,49 @@ context:
 - `cargo clippy --workspace --all-targets -- -D warnings` -- expected: 所有 target 无 warning。
 - `cargo test --workspace` -- expected: 50 个测试全部通过。
 - 四个 `cargo run -p morva-cli -- ...` 示例命令 -- expected: check/parse/inspect 成功，simulate 七阶段 PASS。
+
+## Suggested Review Order
+
+**入口与可信度**
+
+- 从统一索引理解文档层级、当前状态和事实优先级。
+  [`index.md:1`](../../docs/index.md#L1)
+
+- 顶层入口准确列出强类型场景和四命令语义门禁。
+  [`README.md:11`](../../README.md#L11)
+
+**强制边界与当前事实**
+
+- AI 上下文集中冻结语义层、作用域、模拟和变更控制规则。
+  [`project-context.md:26`](../../docs/project-context.md#L26)
+
+- 实现状态区分已验证能力、兼容解析和静态类型缺口。
+  [`implementation-status.md:5`](../../docs/implementation-status.md#L5)
+
+- 需求明确扩展名约定、parse 门禁与 v0.1 完成定义。
+  [`requirements.md:53`](../../docs/requirements.md#L53)
+
+- Roadmap 将矛盾检查移为独立候选，统一完成口径。
+  [`roadmap.md:3`](../../docs/roadmap.md#L3)
+
+**架构与语言契约**
+
+- CLI 呈现自由与稳定输出兼容边界在此分开。
+  [`architecture.md:55`](../../docs/architecture.md#L55)
+
+- 语言设计完整列出 scenario 强类型语义与兼容容器。
+  [`language-design.md:35`](../../docs/language-design.md#L35)
+
+- 语言参考限定非负整数、文件约定和当前表达式表面。
+  [`language-reference.md:5`](../../docs/language-reference.md#L5)
+
+**审计证据与后续项**
+
+- 扫描报告使用可移植路径并记录可复现验证命令。
+  [`project-scan-report.json:1`](../../docs/project-scan-report.json#L1)
+
+- 冻结块外评审锚点已与当前源码重新对齐。
+  [`spec-v0-1-minimal-semantic-core.md:83`](spec-v0-1-minimal-semantic-core.md#L83)
+
+- CI 自动门禁作为审查发现独立延期，不混入文档收口。
+  [`deferred-work.md:1`](deferred-work.md#L1)

@@ -32,7 +32,7 @@ atomic idempotent timeout retry
 implementation_hint
 ```
 
-The current semantic core models `system`, `entity`, `enum`, and `action`, including enum members, fields, parameters, and `requires`, `effects`, `ensures`, and `invariant` clauses. Broader declaration kinds remain compatibility containers. Within an action, only the documented soft items `atomic`, `idempotent`, `timeout`, `retry`, and `implementation_hint` may be ignored by the current semantic model; unknown items are errors.
+The current semantic core models `system`, `entity`, `enum`, `action`, and `scenario`, including enum members, fields, parameters, scenario items, and `requires`, `effects`, `ensures`, and `invariant` clauses. Broader declaration kinds remain compatibility containers. Within an action, only the documented soft items `atomic`, `idempotent`, `timeout`, `retry`, and `implementation_hint` may be ignored by the current semantic model; unknown items are errors.
 
 ## Sketch grammar
 

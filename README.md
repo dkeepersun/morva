@@ -10,7 +10,7 @@ Source code answers *how a system is implemented*. Morva aims to state *what mus
 
 The current v0.1 scope is intentionally small:
 
-- strongly typed `system`, `entity`, `enum`, and `action` syntax models;
+- strongly typed `system`, `entity`, `enum`, `action`, and `scenario` syntax models;
 - fields, parameters, enum members, and `requires`, `effects`, `ensures`, and `invariant` clauses;
 - duplicate-name, type, field-path, enum-member, and effect-target checks;
 - deterministic `check`, `parse`, and `inspect` commands with source diagnostics;

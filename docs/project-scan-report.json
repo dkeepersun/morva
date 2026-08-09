@@ -7,8 +7,8 @@
   },
   "mode": "initial_scan",
   "scan_level": "exhaustive",
-  "project_root": "/Users/alex/workspace/morva",
-  "project_knowledge": "/Users/alex/workspace/morva/docs",
+  "project_root": ".",
+  "project_knowledge": "docs",
   "completed_steps": [
     {
       "step": "step_1",
@@ -72,19 +72,34 @@
     ]
   },
   "outputs_generated": [
-    "ai-handoff.md",
-    "architecture.md",
-    "development-guide.md",
-    "implementation-status.md",
-    "index.md",
-    "language-reference.md",
-    "project-context.md",
-    "project-overview.md",
-    "project-scan-report.json",
-    "requirements.md",
-    "source-tree-analysis.md",
-    "testing-strategy.md"
+    "docs/ai-handoff.md",
+    "docs/architecture.md",
+    "docs/development-guide.md",
+    "docs/implementation-status.md",
+    "docs/index.md",
+    "docs/language-reference.md",
+    "docs/project-context.md",
+    "docs/project-overview.md",
+    "docs/project-scan-report.json",
+    "docs/requirements.md",
+    "docs/source-tree-analysis.md",
+    "docs/testing-strategy.md"
   ],
+  "verification": {
+    "source_commit": "ae90f8d6126eb99cec6f4388ece790b04cf53e8d",
+    "rustc": "1.95.0",
+    "cargo": "1.95.0",
+    "commands": [
+      "cargo fmt --check",
+      "cargo clippy --workspace --all-targets -- -D warnings",
+      "cargo test --workspace",
+      "cargo run -p morva-cli -- check examples/order.morva",
+      "cargo run -p morva-cli -- parse examples/order.morva",
+      "cargo run -p morva-cli -- inspect examples/order.morva",
+      "cargo run -p morva-cli -- simulate examples/order.morva NormalConfirmation"
+    ],
+    "result": "passed: formatting, strict Clippy, 50 integration tests, and four-command example workflow"
+  },
   "project_types": [
     {
       "part_id": "core",
