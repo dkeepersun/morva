@@ -5,14 +5,14 @@
 ## 1. 必读顺序
 
 1. `docs/project-context.md`：短小的强制工作规则。
-2. `docs/requirements.md`：产品目标、v0.1 需求、非目标和变更门槛。
-3. `docs/implementation-status.md`：已实现、兼容、未实现和技术债务。
-4. `docs/architecture.md`：模块职责和依赖方向。
-5. 与任务相关的语言/CLI/测试文档。
-6. `_bmad-output/implementation-artifacts/` 中相关冻结规格。
-7. 实际源码、测试和 `examples/order.morva`。
+2. `_bmad-output/implementation-artifacts/` 中与任务相关的冻结规格：确认已批准意图和边界。
+3. 与任务相关的实际源码、自动化测试和示例：建立当前行为心智模型。
+4. `docs/requirements.md`：产品目标、v0.1 需求、非目标和变更门槛。
+5. `docs/implementation-status.md`：已实现、兼容、未实现和技术债务。
+6. `docs/architecture.md`：模块职责和依赖方向。
+7. 与任务相关的其他语言/CLI/测试说明文档。
 
-如果文档冲突，优先级为：人工最新明确指令 → 冻结规格中的 human-owned intent → 自动化测试与源码事实 → 需求基线 → 其他说明文档 → roadmap。
+如果文档冲突，优先级为：人工最新明确指令 → 冻结规格中的 human-owned intent → 自动化测试与源码事实 → 需求基线 → 其他说明文档 → roadmap。冻结块权威记录获批意图，源码和当前测试权威记录当前行为；规格 change log、旧测试计数及 `project-scan-report.json` 是提交锚定的历史证据，不应滚动改写为当前事实。
 
 ## 2. 开始任务前
 
@@ -55,5 +55,5 @@
 ## 6. 可直接复制的新会话提示
 
 ```text
-请先读取 docs/index.md 和 docs/project-context.md，再按 docs/ai-handoff.md 的优先级核对需求、冻结规格、源码与测试。保持 Morva/morva/.morva 命名，结构化源码是 Source of Truth，核心语义只在 morva-core，优先简单、准确、低复杂度。不要把兼容解析当成已支持语义，不要扩张未批准范围。所有实现必须补测试并通过 fmt、严格 clippy、workspace tests 和相关示例闭环。交付时列出实际改动、验证结果、已知限制和下一最小步骤。
+请先读取 docs/index.md 和 docs/project-context.md，再按 docs/ai-handoff.md 的优先级先核对相关冻结规格，然后阅读任务相关源码、测试与示例以确认当前行为，最后使用较宽的说明文档。保持 Morva/morva/.morva 命名，结构化源码是 Source of Truth，核心语义只在 morva-core，优先简单、准确、低复杂度。不要把兼容解析当成已支持语义，不要扩张未批准范围。所有实现必须补测试并通过 fmt、严格 clippy、workspace tests 和相关示例闭环。交付时列出实际改动、验证结果、已知限制和下一最小步骤。
 ```

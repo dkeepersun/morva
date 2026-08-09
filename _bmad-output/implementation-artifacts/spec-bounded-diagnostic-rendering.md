@@ -121,4 +121,4 @@ context:
 - 保留 CR-only 为独立语言契约增量。
   [`deferred-work.md:7`](deferred-work.md#L7)
 
-2026-08-10 review follow-up 验证：移除 line-tail 搜索后的当前工作树通过 formatting、严格 Clippy、85 个自动化测试与 `git diff --check`；规格保持 `in-review`。
+2026-08-10 review follow-up 验证：移除 line-tail 搜索后的当前工作树通过 formatting、严格 Clippy、85 个自动化测试与 `git diff --check`；规格已收口为 `done`。

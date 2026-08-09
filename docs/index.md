@@ -8,7 +8,7 @@
 - 主语言：Rust 2024 edition
 - 架构：lexer → parser → typed AST → semantic check → CLI/simulator
 - Source of Truth：经过人工审核的 `.morva` 源码
-- 当前状态：v0.1 semantic core 与最小 single-action simulate 已完成
+- 当前状态：v0.1 semantic core、最小 single-action simulate、静态表达式类型、有界诊断与通用换行契约已完成；CI 已在本地配置，尚未推送或由 GitHub 托管运行
 
 ## 必读文档
 
@@ -24,6 +24,7 @@
 - [开发指南](development-guide.md)
 - [测试与质量策略](testing-strategy.md)
 - [CI 质量门禁](ci.md)
+- [历史项目扫描快照](project-scan-report.json) — 数量与验证结果仅适用于其 `source_commit`
 - [源码树与职责](source-tree-analysis.md)
 - [CLI 设计与契约](cli.md)
 
@@ -38,6 +39,9 @@
 
 - [v0.1 最小语义闭环](../_bmad-output/implementation-artifacts/spec-v0-1-minimal-semantic-core.md)
 - [v0.1 最小场景模拟](../_bmad-output/implementation-artifacts/spec-v0-1-minimal-simulate.md)
+- [最小静态表达式类型](../_bmad-output/implementation-artifacts/spec-minimal-static-expression-types.md)
+- [有界诊断窗口与安全路径输出](../_bmad-output/implementation-artifacts/spec-bounded-diagnostic-rendering.md)
+- [通用换行契约](../_bmad-output/implementation-artifacts/spec-universal-newline-contract.md)
 
 规格中的 `<frozen-after-approval>` 内容是人工拥有的意图边界，其他 AI 不得为适配代码而自行修改。
 

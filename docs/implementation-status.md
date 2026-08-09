@@ -1,6 +1,6 @@
 # Morva 实现状态
 
-最后核对：2026-08-10，基于提交 `ae90f8d` 之后的工作树。
+最后核对：2026-08-10；当前实现证据基线为提交 `0023bc8`，本次文档收口尚未提交。
 
 ## 已实现且有自动化测试
 
@@ -12,9 +12,9 @@
 - Canonical builtin、Boolean 谓词、比较操作数及 effect 值类型检查；解析失败后抑制派生类型诊断。
 - Scenario 结构、action 选择、arity、entity 参数绑定和 given 值检查。
 - `check`、`parse`、`inspect`、`simulate` CLI 与稳定退出码。
-- GitHub Actions 质量门禁：格式、严格 Clippy、职责分片测试、四命令示例与最终汇总检查。
+- GitHub Actions 质量门禁已在本地提交中配置：格式、严格 Clippy、职责分片测试、四命令示例与最终汇总检查。该提交尚未推送，因此远程 GitHub Actions 尚未运行，`Quality gate` 也尚未设为 branch protection 必需检查。
 - 单 action、纯内存、enum/Boolean/Integer 状态模拟及七个阶段。
-- 91 个自动化测试：66 个 core 语法/语义/模拟公开 API 集成测试、2 个 core runtime guard 单元测试、23 个 CLI 进程级测试。
+- 自动化测试覆盖 core 语法、语义、模拟公开 API、runtime guard 与 CLI 进程级契约；当前总数以 `cargo test --workspace --locked` 的实际结果为准。
 - LF、CRLF、CR 统一作为单个逻辑换行；注释、parser 分隔、原源 byte span 与 CLI 混合换行行列保持一致。
 - 普通诊断和模拟失败共享有界源码窗口；excerpt 与 marker 分别不超过 160 个渲染字符，换行终止符不回显，所有 UTF-8 路径输出安全转义控制字符。
 
@@ -48,12 +48,14 @@
 - `_bmad-output/implementation-artifacts/spec-v0-1-minimal-semantic-core.md`
 - `_bmad-output/implementation-artifacts/spec-v0-1-minimal-simulate.md`
 - `_bmad-output/implementation-artifacts/spec-minimal-static-expression-types.md`
+- `_bmad-output/implementation-artifacts/spec-bounded-diagnostic-rendering.md`
+- `_bmad-output/implementation-artifacts/spec-universal-newline-contract.md`
 
 冻结块记录人类批准意图，其他 AI 不得自行修改其边界或把未完成方向标为已完成。
 
 ## 下一阶段候选（尚未批准实现）
 
-优先建议先处理诊断资源边界，再考虑 AI `grill/challenge/review`。Tree-sitter、LSP、图导出和 flow/lifecycle 模拟只能按真实用例独立立项。
+可考虑 AI `grill/challenge/review`。Tree-sitter、LSP、图导出和 flow/lifecycle 模拟只能按真实用例独立立项。
 
 Roadmap 中的状态转换与明显条款矛盾检查也属于后续候选，不阻塞上述已批准规格的完成状态。
 

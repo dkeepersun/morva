@@ -1,6 +1,6 @@
 # CI 质量门禁
 
-Morva 使用 GitHub Actions 的 [Test Pipeline](../.github/workflows/test.yml) 验证 `main` push、pull request、手动运行和每周定时运行。工作流只需要仓库读权限，不使用 secret、外部服务或部署凭据。
+Morva 已在本地提交中配置 GitHub Actions 的 [Test Pipeline](../.github/workflows/test.yml)，用于验证 `main` push、pull request、手动运行和每周定时运行。截至 2026-08-10 本次核对，该提交尚未推送，工作流尚未由 GitHub 托管运行，`Quality gate` 也尚未设为 branch protection 必需检查；推送或配置保护规则后必须同步更新本节。工作流只需要仓库读权限，不使用 secret、外部服务或部署凭据。
 
 ## 门禁结构
 

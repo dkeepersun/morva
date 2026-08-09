@@ -10,8 +10,10 @@
 - [x] validate names, types, field paths, contextual enum members, and effect targets
 - [x] add single-action scenario simulation with explicit in-memory state
 
-The two approved v0.1 specifications are complete. The following remains a candidate
-for a separately approved semantic-core increment and does not block that baseline:
+The original two approved v0.1 baseline specifications are complete. Subsequent
+approved increments also completed static expression type checks, bounded diagnostic
+rendering, and the universal newline contract. The following remains a candidate for
+a separately approved semantic-core increment and does not block that baseline:
 
 - [ ] validate state transitions and obvious clause contradictions
 
@@ -25,3 +27,9 @@ for a separately approved semantic-core increment and does not block that baseli
 - Skill and MCP integration
 
 These are directions, not commitments for v0.1. Formal verification and implementation code generation remain outside the initial scope.
+
+## Repository quality gate
+
+The GitHub Actions workflow is configured in local commits but has not yet been pushed
+or run by GitHub. `Quality gate` must only become a required branch-protection check
+after the workflow is available remotely and has completed at least one hosted run.
