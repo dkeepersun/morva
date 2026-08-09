@@ -12,10 +12,10 @@
 
 The original two approved v0.1 baseline specifications are complete. Subsequent
 approved increments also completed static expression type checks, bounded diagnostic
-rendering, and the universal newline contract. The following remains a candidate for
-a separately approved semantic-core increment and does not block that baseline:
+rendering, the universal newline contract, and conservative exact-literal transition
+contradiction checks.
 
-- [ ] validate state transitions and obvious clause contradictions
+- [x] validate exact-literal state transitions and obvious same-phase clause contradictions
 
 ## After the core is stable
 

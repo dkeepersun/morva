@@ -450,3 +450,26 @@ fn unknown_scenario_selection_is_reported() {
     let error = simulate(&checked(source), "Missing").expect_err("selection must fail");
     assert_eq!(error.code, "MORVA4001");
 }
+
+#[test]
+fn obvious_transition_contradictions_fail_static_check_before_simulation() {
+    let source = r#"system Test {
+  entity Counter { count: Integer }
+  action Impossible(counter: Counter) {
+    effects counter.count = 1
+    ensures counter.count == 2
+  }
+  scenario Invalid {
+    given counter.count = 0
+    run Impossible(counter)
+    expect true
+  }
+}
+"#;
+    let document = parse(source).expect("valid syntax");
+    let diagnostics = check(&document);
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code, "MORVA2019");
+    let diagnostic = simulate(&document, "Invalid").expect_err("static check must fail");
+    assert_eq!(diagnostic, diagnostics[0]);
+}

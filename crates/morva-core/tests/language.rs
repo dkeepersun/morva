@@ -707,6 +707,265 @@ fn scenario_diagnostics_remain_in_source_order() {
 }
 
 #[test]
+fn rejects_an_always_false_action_predicate() {
+    let source = r#"system Test {
+  action Impossible {
+    requires false
+  }
+}
+"#;
+    let document = parse(source).expect("valid syntax");
+    let diagnostics = check(&document);
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code, "MORVA2018");
+    assert_eq!(diagnostics[0].message, "predicate is always false");
+    let start = source.find("false").expect("predicate location");
+    assert_eq!(diagnostics[0].span.start, start);
+    assert_eq!(diagnostics[0].span.end, start + "false".len());
+}
+
+#[test]
+fn rejects_constant_and_same_phase_literal_contradictions() {
+    let source = r#"system Test {
+  enum State {
+    Ready
+    Done
+  }
+  entity Item {
+    state: State
+    count: Integer
+    enabled: Boolean
+  }
+  action Impossible(item: Item) {
+    requires 1 != 1
+    requires item.state == Ready
+    invariant Done == item.state
+    ensures item.enabled == true
+    ensures false == item.enabled
+  }
+}
+"#;
+    let diagnostics = check(&parse(source).expect("valid syntax"));
+    assert_eq!(
+        diagnostics
+            .iter()
+            .map(|item| (item.code, item.message.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("MORVA2018", "predicate is always false"),
+            (
+                "MORVA2018",
+                "predicate conflicts with an earlier literal constraint on 'item.state'"
+            ),
+            (
+                "MORVA2018",
+                "predicate conflicts with an earlier literal constraint on 'item.enabled'"
+            ),
+        ]
+    );
+    for (diagnostic, predicate) in
+        diagnostics
+            .iter()
+            .zip(["1 != 1", "Done == item.state", "false == item.enabled"])
+    {
+        let start = source.find(predicate).expect("predicate location");
+        assert_eq!(diagnostic.span.start, start);
+        assert_eq!(diagnostic.span.end, start + predicate.len());
+    }
+}
+
+#[test]
+fn final_literal_effects_reject_conflicting_postconditions_conservatively() {
+    let source = r#"system Test {
+  enum State {
+    Ready
+    Done
+  }
+  entity Item {
+    state: State
+    count: Integer
+    balance: Decimal
+  }
+  action Known(item: Item) {
+    requires item.state == Ready
+    effects item.state = Done
+    ensures item.state != Done
+  }
+  action Overwrite(item: Item) {
+    effects item.count = 1
+    effects item.count = 2
+    ensures item.count == 1
+  }
+  action Recovered(item: Item) {
+    effects item.count = item.count
+    effects item.count += 1
+    effects item.count = 3
+    ensures item.count == 4
+  }
+  action DecimalKnown(item: Item) {
+    effects item.balance = 0
+    ensures item.balance != 0
+  }
+  action Unknown(item: Item) {
+    effects item.count = 3
+    effects item.count += 1
+    ensures item.count == 3
+  }
+}
+"#;
+    let diagnostics = check(&parse(source).expect("valid syntax"));
+    assert_eq!(diagnostics.len(), 4, "diagnostics: {diagnostics:?}");
+    for (diagnostic, predicate, path) in [
+        (&diagnostics[0], "item.state != Done", "item.state"),
+        (&diagnostics[1], "item.count == 1", "item.count"),
+        (&diagnostics[2], "item.count == 4", "item.count"),
+        (&diagnostics[3], "item.balance != 0", "item.balance"),
+    ] {
+        assert_eq!(diagnostic.code, "MORVA2019");
+        assert_eq!(
+            diagnostic.message,
+            format!("postcondition conflicts with final literal effect for '{path}'")
+        );
+        let start = source.find(predicate).expect("predicate location");
+        assert_eq!(diagnostic.span.start, start);
+        assert_eq!(diagnostic.span.end, start + predicate.len());
+    }
+}
+
+#[test]
+fn literal_fact_analysis_preserves_legal_and_unknown_transitions() {
+    let source = r#"system Test {
+  enum State {
+    Ready
+    Done
+  }
+  entity Item {
+    state: State
+    other: State
+    count: Integer
+  }
+  action Legal(item: Item) {
+    requires item.state == Ready
+    requires item.state == Ready
+    requires item.other != Ready
+    requires item.other != Done
+    effects item.state = Done
+    ensures item.state == Done
+  }
+  action UnknownSet(item: Item) {
+    effects item.count = item.count
+    ensures item.count == 1
+  }
+  action UnknownCompound(item: Item) {
+    effects item.count = 1
+    effects item.count += 1
+    ensures item.count == 1
+  }
+}
+"#;
+    assert!(
+        check(&parse(source).expect("valid syntax")).is_empty(),
+        "legal transitions and unknown final values must not be inferred"
+    );
+}
+
+#[test]
+fn enum_member_facts_do_not_shadow_action_parameters() {
+    let source = r#"system Test {
+  enum State {
+    Ready
+    Done
+  }
+  entity Item { state: State }
+  action ParameterValue(Ready: State, item: Item) {
+    requires item.state == Ready
+    requires item.state == Done
+    effects item.state = Ready
+    ensures item.state == Done
+  }
+}
+"#;
+    assert!(
+        check(&parse(source).expect("valid syntax")).is_empty(),
+        "a bound action parameter is not an enum literal fact"
+    );
+}
+
+#[test]
+fn primary_resolution_and_type_errors_suppress_literal_fact_diagnostics() {
+    let source = r#"system Test {
+  enum State { Ready }
+  entity Item {
+    count: Integer
+    state: State
+  }
+  action Broken(item: Item) {
+    requires item.missing == 0
+    requires item.count == true
+    requires item.state == Missing
+    requires false
+    effects item.count = 1
+    ensures item.count == 2
+  }
+}
+"#;
+    let diagnostics = check(&parse(source).expect("valid syntax"));
+    assert!(diagnostics.iter().any(|item| item.code == "MORVA2010"));
+    assert!(diagnostics.iter().any(|item| item.code == "MORVA2014"));
+    assert!(diagnostics.iter().any(|item| item.code == "MORVA2012"));
+    assert!(
+        diagnostics
+            .iter()
+            .all(|item| !matches!(item.code, "MORVA2018" | "MORVA2019"))
+    );
+}
+
+#[test]
+fn a_postcondition_gets_one_primary_contradiction_diagnostic_per_span() {
+    let source = r#"system Test {
+  entity Item { count: Integer }
+  action Impossible(item: Item) {
+    invariant item.count == 1
+    effects item.count = 1
+    ensures item.count == 2
+  }
+}
+"#;
+    let diagnostics = check(&parse(source).expect("valid syntax"));
+    assert_eq!(diagnostics.len(), 1, "diagnostics: {diagnostics:?}");
+    assert_eq!(diagnostics[0].code, "MORVA2018");
+    assert_eq!(
+        diagnostics[0].message,
+        "predicate conflicts with an earlier literal constraint on 'item.count'"
+    );
+}
+
+#[test]
+fn literal_fact_diagnostics_remain_in_source_order_across_codes() {
+    let source = r#"system Test {
+  entity Item {
+    first: Integer
+    second: Integer
+  }
+  action Impossible(item: Item) {
+    effects item.first = 1
+    ensures item.first == 2
+    ensures item.second != 3
+    ensures item.second == 3
+  }
+}
+"#;
+    let diagnostics = check(&parse(source).expect("valid syntax"));
+    assert_eq!(
+        diagnostics.iter().map(|item| item.code).collect::<Vec<_>>(),
+        ["MORVA2019", "MORVA2018"]
+    );
+    assert!(diagnostics[0].span.start < diagnostics[1].span.start);
+    assert!(diagnostics[0].message.contains("item.first"));
+    assert!(diagnostics[1].message.contains("item.second"));
+}
+
+#[test]
 fn unknown_action_items_fail_but_documented_soft_items_remain_compatible() {
     let accepted = r#"system Shop {
   action Save {

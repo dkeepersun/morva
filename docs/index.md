@@ -42,6 +42,7 @@
 - [最小静态表达式类型](../_bmad-output/implementation-artifacts/spec-minimal-static-expression-types.md)
 - [有界诊断窗口与安全路径输出](../_bmad-output/implementation-artifacts/spec-bounded-diagnostic-rendering.md)
 - [通用换行契约](../_bmad-output/implementation-artifacts/spec-universal-newline-contract.md)
+- [明显状态转换矛盾](../_bmad-output/implementation-artifacts/spec-obvious-transition-contradictions.md)
 
 规格中的 `<frozen-after-approval>` 内容是人工拥有的意图边界，其他 AI 不得为适配代码而自行修改。
 

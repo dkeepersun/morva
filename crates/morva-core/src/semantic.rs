@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::Diagnostic;
 use crate::ast::*;
@@ -525,6 +525,7 @@ fn check_entity(entity: &Entity, index: &TypeIndex<'_>, diagnostics: &mut Vec<Di
 }
 
 fn check_action(action: &Action, index: &TypeIndex<'_>, diagnostics: &mut Vec<Diagnostic>) {
+    let first_action_diagnostic = diagnostics.len();
     let mut parameters = HashMap::new();
     for parameter in &action.parameters {
         if parameters
@@ -556,6 +557,316 @@ fn check_action(action: &Action, index: &TypeIndex<'_>, diagnostics: &mut Vec<Di
                 }
             }
         }
+    }
+    if diagnostics.len() == first_action_diagnostic {
+        check_obvious_action_contradictions(action, &parameters, index, diagnostics);
+        diagnostics[first_action_diagnostic..].sort_by_key(|diagnostic| diagnostic.span.start);
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
+enum LiteralFactValue {
+    Boolean(bool),
+    Integer(i64),
+    Enum { declaration: usize, member: String },
+}
+
+enum LiteralFact {
+    Always(bool),
+    Equal(String, LiteralFactValue),
+    NotEqual(String, LiteralFactValue),
+}
+
+#[derive(Default)]
+struct PathConstraints {
+    equal: Option<LiteralFactValue>,
+    not_equal: Vec<LiteralFactValue>,
+}
+
+fn check_obvious_action_contradictions(
+    action: &Action,
+    parameters: &HashMap<&str, &Parameter>,
+    index: &TypeIndex<'_>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let mut emitted = HashSet::new();
+    check_predicate_group(
+        action,
+        parameters,
+        index,
+        |kind| matches!(kind, ClauseKind::Requires | ClauseKind::Invariant),
+        &mut emitted,
+        diagnostics,
+    );
+    check_predicate_group(
+        action,
+        parameters,
+        index,
+        |kind| matches!(kind, ClauseKind::Invariant | ClauseKind::Ensures),
+        &mut emitted,
+        diagnostics,
+    );
+    check_final_effect_contradictions(action, parameters, index, diagnostics);
+}
+
+fn check_final_effect_contradictions(
+    action: &Action,
+    parameters: &HashMap<&str, &Parameter>,
+    index: &TypeIndex<'_>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let mut final_values: HashMap<String, Option<LiteralFactValue>> = HashMap::new();
+    for clause in &action.clauses {
+        if clause.kind != ClauseKind::Effects {
+            continue;
+        }
+        for expression in &clause.expressions {
+            let ClauseExpression::Assignment(assignment) = expression else {
+                continue;
+            };
+            let path = assignment.target.display();
+            let value = if assignment.operator == AssignmentOperator::Set {
+                resolve_path_without_diagnostics(&assignment.target, parameters, index).and_then(
+                    |expected| contextual_literal(&assignment.value, expected, parameters),
+                )
+            } else {
+                None
+            };
+            final_values.insert(path, value);
+        }
+    }
+
+    for clause in &action.clauses {
+        if !matches!(clause.kind, ClauseKind::Invariant | ClauseKind::Ensures) {
+            continue;
+        }
+        for expression in &clause.expressions {
+            let ClauseExpression::Predicate(expression) = expression else {
+                continue;
+            };
+            let Some(fact) = literal_fact(expression, parameters, index) else {
+                continue;
+            };
+            let (path, conflicts) = match fact {
+                LiteralFact::Equal(path, expected) => {
+                    let conflicts = final_values
+                        .get(&path)
+                        .and_then(Option::as_ref)
+                        .is_some_and(|actual| actual != &expected);
+                    (path, conflicts)
+                }
+                LiteralFact::NotEqual(path, rejected) => {
+                    let conflicts =
+                        final_values.get(&path).and_then(Option::as_ref) == Some(&rejected);
+                    (path, conflicts)
+                }
+                LiteralFact::Always(_) => continue,
+            };
+            let already_reported = diagnostics.iter().any(|diagnostic| {
+                diagnostic.code == "MORVA2018" && diagnostic.span == expression.span
+            });
+            if conflicts && !already_reported {
+                diagnostics.push(Diagnostic::new(
+                    "MORVA2019",
+                    format!("postcondition conflicts with final literal effect for '{path}'"),
+                    expression.span,
+                ));
+            }
+        }
+    }
+}
+
+fn check_predicate_group(
+    action: &Action,
+    parameters: &HashMap<&str, &Parameter>,
+    index: &TypeIndex<'_>,
+    include: impl Fn(ClauseKind) -> bool,
+    emitted: &mut HashSet<(usize, usize)>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let mut constraints: HashMap<String, PathConstraints> = HashMap::new();
+    for clause in &action.clauses {
+        if !include(clause.kind) {
+            continue;
+        }
+        for expression in &clause.expressions {
+            let ClauseExpression::Predicate(expression) = expression else {
+                continue;
+            };
+            let Some(fact) = literal_fact(expression, parameters, index) else {
+                continue;
+            };
+            let conflict = match fact {
+                LiteralFact::Always(value) => !value,
+                LiteralFact::Equal(path, value) => {
+                    let entry = constraints.entry(path.clone()).or_default();
+                    let conflict = entry
+                        .equal
+                        .as_ref()
+                        .is_some_and(|earlier| earlier != &value)
+                        || entry.not_equal.contains(&value);
+                    if entry.equal.is_none() {
+                        entry.equal = Some(value);
+                    }
+                    if conflict && emitted.insert((expression.span.start, expression.span.end)) {
+                        diagnostics.push(Diagnostic::new(
+                            "MORVA2018",
+                            format!(
+                                "predicate conflicts with an earlier literal constraint on '{path}'"
+                            ),
+                            expression.span,
+                        ));
+                    }
+                    continue;
+                }
+                LiteralFact::NotEqual(path, value) => {
+                    let entry = constraints.entry(path.clone()).or_default();
+                    let conflict = entry.equal.as_ref() == Some(&value);
+                    if !entry.not_equal.contains(&value) {
+                        entry.not_equal.push(value);
+                    }
+                    if conflict && emitted.insert((expression.span.start, expression.span.end)) {
+                        diagnostics.push(Diagnostic::new(
+                            "MORVA2018",
+                            format!(
+                                "predicate conflicts with an earlier literal constraint on '{path}'"
+                            ),
+                            expression.span,
+                        ));
+                    }
+                    continue;
+                }
+            };
+            if conflict && emitted.insert((expression.span.start, expression.span.end)) {
+                diagnostics.push(Diagnostic::new(
+                    "MORVA2018",
+                    "predicate is always false",
+                    expression.span,
+                ));
+            }
+        }
+    }
+}
+
+fn literal_fact(
+    expression: &Expr,
+    parameters: &HashMap<&str, &Parameter>,
+    index: &TypeIndex<'_>,
+) -> Option<LiteralFact> {
+    match &expression.kind {
+        ExprKind::Boolean(value) => Some(LiteralFact::Always(*value)),
+        ExprKind::Binary {
+            left,
+            operator,
+            right,
+        } => {
+            if let (Some(left), Some(right)) = (plain_literal(left), plain_literal(right)) {
+                return evaluate_literal_comparison(left, *operator, right)
+                    .map(LiteralFact::Always);
+            }
+            if !matches!(operator, BinaryOperator::Equal | BinaryOperator::NotEqual) {
+                return None;
+            }
+            path_literal_fact(left, *operator, right, parameters, index)
+                .or_else(|| path_literal_fact(right, *operator, left, parameters, index))
+        }
+        ExprKind::Integer(_) | ExprKind::Path(_) => None,
+    }
+}
+
+fn path_literal_fact(
+    path_expression: &Expr,
+    operator: BinaryOperator,
+    literal_expression: &Expr,
+    parameters: &HashMap<&str, &Parameter>,
+    index: &TypeIndex<'_>,
+) -> Option<LiteralFact> {
+    let ExprKind::Path(path) = &path_expression.kind else {
+        return None;
+    };
+    let resolved = resolve_path_without_diagnostics(path, parameters, index)?;
+    let value = contextual_literal(literal_expression, resolved, parameters)?;
+    let path = path.display();
+    Some(match operator {
+        BinaryOperator::Equal => LiteralFact::Equal(path, value),
+        BinaryOperator::NotEqual => LiteralFact::NotEqual(path, value),
+        _ => return None,
+    })
+}
+
+fn resolve_path_without_diagnostics<'a>(
+    path: &Path,
+    parameters: &HashMap<&str, &Parameter>,
+    index: &'a TypeIndex<'a>,
+) -> Option<ResolvedType<'a>> {
+    let fields = HashMap::new();
+    let mut ignored = Vec::new();
+    match resolve_path(path, &fields, parameters, index, &mut ignored) {
+        Operand::Typed(resolved) if ignored.is_empty() => resolved,
+        Operand::Typed(_) | Operand::Unbound(_) => None,
+    }
+}
+
+fn contextual_literal(
+    expression: &Expr,
+    expected: ResolvedType<'_>,
+    parameters: &HashMap<&str, &Parameter>,
+) -> Option<LiteralFactValue> {
+    match (&expression.kind, expected) {
+        (ExprKind::Boolean(value), ResolvedType::Builtin(BuiltinType::Boolean)) => {
+            Some(LiteralFactValue::Boolean(*value))
+        }
+        (
+            ExprKind::Integer(value),
+            ResolvedType::Builtin(BuiltinType::Integer | BuiltinType::Decimal),
+        ) => Some(LiteralFactValue::Integer(*value)),
+        (ExprKind::Path(path), ResolvedType::Enum(enumeration))
+            if path.segments.len() == 1
+                && !parameters.contains_key(path.segments[0].text.as_str())
+                && enumeration
+                    .members
+                    .iter()
+                    .any(|member| member.text == path.segments[0].text) =>
+        {
+            Some(LiteralFactValue::Enum {
+                declaration: enumeration.name.span.start,
+                member: path.segments[0].text.clone(),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn plain_literal(expression: &Expr) -> Option<LiteralFactValue> {
+    match expression.kind {
+        ExprKind::Boolean(value) => Some(LiteralFactValue::Boolean(value)),
+        ExprKind::Integer(value) => Some(LiteralFactValue::Integer(value)),
+        ExprKind::Path(_) | ExprKind::Binary { .. } => None,
+    }
+}
+
+fn evaluate_literal_comparison(
+    left: LiteralFactValue,
+    operator: BinaryOperator,
+    right: LiteralFactValue,
+) -> Option<bool> {
+    match (left, right) {
+        (LiteralFactValue::Boolean(left), LiteralFactValue::Boolean(right)) => match operator {
+            BinaryOperator::Equal => Some(left == right),
+            BinaryOperator::NotEqual => Some(left != right),
+            _ => None,
+        },
+        (LiteralFactValue::Integer(left), LiteralFactValue::Integer(right)) => {
+            Some(match operator {
+                BinaryOperator::Equal => left == right,
+                BinaryOperator::NotEqual => left != right,
+                BinaryOperator::Greater => left > right,
+                BinaryOperator::GreaterEqual => left >= right,
+                BinaryOperator::Less => left < right,
+                BinaryOperator::LessEqual => left <= right,
+            })
+        }
+        _ => None,
     }
 }
 

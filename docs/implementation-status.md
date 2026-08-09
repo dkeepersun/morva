@@ -1,6 +1,6 @@
 # Morva 实现状态
 
-最后核对：2026-08-10；当前实现证据基线为提交 `0023bc8`，本次文档收口尚未提交。
+最后核对：2026-08-10。当前能力以下列已完成规格、对应源码/公开测试和实际质量门禁结果为证据；提交锚定的历史数字不代表当前总量。
 
 ## 已实现且有自动化测试
 
@@ -10,6 +10,7 @@
 - 字段、参数、enum member、四类行为条款和有限表达式。
 - 单一顶层 system、重复名称、未知/歧义类型、路径、enum member、effect target 检查。
 - Canonical builtin、Boolean 谓词、比较操作数及 effect 值类型检查；解析失败后抑制派生类型诊断。
+- Action 前/后态的有限精确字面量事实一致性检查，以及顺序 effects 最终已知直接赋值与后置约束检查（`MORVA2018/2019`）。
 - Scenario 结构、action 选择、arity、entity 参数绑定和 given 值检查。
 - `check`、`parse`、`inspect`、`simulate` CLI 与稳定退出码。
 - GitHub Actions 质量门禁已在本地提交中配置：格式、严格 Clippy、职责分片测试、四命令示例与最终汇总检查。该提交尚未推送，因此远程 GitHub Actions 尚未运行，`Quality gate` 也尚未设为 branch protection 必需检查。
@@ -31,6 +32,8 @@
 
 当前 checker 已区分 canonical builtin family，并检查现有谓词、比较和 effect 类型。它仍不是完整类型系统：没有通用推断或转换、逻辑/算术表达式、Entity 整体值、数据流分析或形式化证明。Decimal 上下文只接受非负 Integer 字面量作为精确常量；受限 simulator 仍只执行 enum、Boolean 和 Integer 值，并保留运行时守卫。
 
+明显矛盾检查只处理已解析的 Boolean、Integer、enum 与 Decimal-context Integer 精确字面量事实。它不做有序区间求解、entity invariant 参数实例化、scenario/action 内联、未写路径跨阶段推理或 compound effect 折叠；非字面量写入和 compound effect 会把相应最终值降为 Unknown。
+
 ### 词法与诊断边界
 
 - 标识符只支持 ASCII。
@@ -50,13 +53,12 @@
 - `_bmad-output/implementation-artifacts/spec-minimal-static-expression-types.md`
 - `_bmad-output/implementation-artifacts/spec-bounded-diagnostic-rendering.md`
 - `_bmad-output/implementation-artifacts/spec-universal-newline-contract.md`
+- `_bmad-output/implementation-artifacts/spec-obvious-transition-contradictions.md`
 
 冻结块记录人类批准意图，其他 AI 不得自行修改其边界或把未完成方向标为已完成。
 
 ## 下一阶段候选（尚未批准实现）
 
 可考虑 AI `grill/challenge/review`。Tree-sitter、LSP、图导出和 flow/lifecycle 模拟只能按真实用例独立立项。
-
-Roadmap 中的状态转换与明显条款矛盾检查也属于后续候选，不阻塞上述已批准规格的完成状态。
 
 任何候选进入开发前都需要：问题陈述、边界、I/O 矩阵、验收标准、测试计划和人工批准。

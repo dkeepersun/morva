@@ -48,7 +48,7 @@ presentation     language semantics
 | `ast.rs` | 带 span 的声明、表达式、赋值和 scenario 模型 | 查找、验证、执行 |
 | `lexer.rs` | 把 UTF-8 源码分解为 token，拒绝不支持字符 | 语法和语义恢复 |
 | `parser.rs` | 构造强类型 AST，维护兼容解析白名单 | 名称解析、类型检查 |
-| `semantic.rs` | 建索引并检查声明、引用、effect 和 scenario 结构 | 形式化证明、完整类型系统 |
+| `semantic.rs` | 建索引并检查声明、引用、effect、scenario 结构和有限字面量事实一致性 | 形式化证明、完整类型系统 |
 | `diagnostic.rs` | 稳定 code/message/span 数据模型 | 行列和终端渲染 |
 | `simulate.rs` | runtime `Value`/report 模型；解释一个已检查 scenario 的内存状态变化 | IO、应用代码、持久化、并发 |
 
@@ -71,6 +71,7 @@ presentation     language semantics
 - 裸标识符只可在明确 enum 期望类型下解释为 enum member。
 - Checker 将 `Bool`/`Boolean`、`Int`/`Integer`、`ID`/`Id` 规范化为相同 builtin family；解析失败使用内部 invalid 结果抑制派生类型诊断。
 - Entity 只作为字段路径的中间类型。谓词、比较和 effect 只接受已批准的标量或 enum 终值；Decimal 上下文可精确接收非负 Integer 字面量，但不存在路径间数值转换。
+- Action 在主引用/类型检查无误后才运行有限事实分析：前态为 `requires + action invariant`，后态为 `action invariant + ensures`。路径的顺序 effect 摘要只有 `Known(literal)` 与 `Unknown`，不会升级为通用数据流。
 
 这是刻意的 v0.1 限制，不能通过在 CLI 或 simulator 中猜测作用域来绕过。
 
@@ -110,6 +111,7 @@ presentation     language semantics
 ## 8. 已知技术债务
 
 - 当前静态表达式类型检查只覆盖已有 literal/path/binary、谓词和 effect，不包含通用推断、逻辑/算术表达式、数据流分析或形式化证明。
+- 当前明显矛盾检查只覆盖同阶段精确字面量事实和最终直接赋值；不实例化 entity invariant，不内联 scenario/action，不做区间推理、跨阶段未写路径推理或 compound folding。
 - Simulator 仍保留类型守卫作为纵深防御；其值域仍只含 enum、Boolean 和 Integer，不能由静态 Decimal 规则推导出 Decimal 模拟支持。
 - 负整数字面量尚未形成产品契约；有界诊断窗口不限制完整 message 或安全路径的总输出大小。
 - 模块作用域、稳定机器可读输出和增量分析均未设计。

@@ -111,6 +111,12 @@ left <= right
 
 谓词必须产生 Boolean。`==/!=` 要求两侧是同一 canonical 标量或同一 enum；`<`、`<=`、`>`、`>=` 只接受 Integer 或 Decimal。非负 Integer 字面量在明确的 Decimal 比较或赋值上下文中是精确 Decimal 常量，例如 `balance >= 0` 和 `effects account.balance = 0` 合法；Integer 路径与 Decimal 路径之间没有隐式转换。Entity 只能作为字段路径中间类型，不能整体比较或赋值。
 
+### 明显矛盾检查
+
+引用和类型检查成功后，checker 会保守识别 action 中无需符号执行即可确定的字面量矛盾：恒假的 Boolean/Integer 常量比较、同一状态阶段中同一路径的互斥 `==`/`!=` 精确值事实，以及最终已知直接字面量 `=` effect 与后置事实的冲突。`requires + action invariant` 形成前态事实组，`action invariant + ensures` 形成独立的后态事实组；合法的前后状态变化不会被合并。
+
+Effects 仍按源码顺序解释。每个路径最后一次直接字面量 `=` 可形成已知最终值；非字面量 `=` 或 `+=/-=` 会把该路径降为未知，后续直接字面量 `=` 可以恢复已知。当前不做有序区间求解、entity invariant 参数实例化、scenario/action 内联、未写路径跨阶段推理或 compound effect 折叠，因此未报告不代表已证明可满足。
+
 ## 5. 兼容容器
 
 Parser 识别下列声明关键字，但除 `system/entity/enum/action/scenario` 外都只作为兼容容器：
