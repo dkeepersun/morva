@@ -11,7 +11,7 @@ lastSaved: '2026-08-10'
 - Repository: Git repository with `origin` on GitHub.
 - Test stack: backend Rust workspace (`Cargo.toml`, Rust 2024 edition).
 - Test framework: Rust built-in test harness with integration tests in both crates.
-- Local gate: `cargo test --workspace` passes with 91 tests.
+- Local gate: `cargo test --workspace --locked` passes with 100 tests (23 CLI, 53 language, 22 simulation, 2 runtime guard unit).
 - CI platform: GitHub Actions, inferred from the GitHub remote; no existing workflow found.
 - Toolchain context: no pinned `rust-toolchain` file; local verification uses rustc/cargo 1.95.0. CI should use stable Rust and cache Cargo artifacts without introducing a new project dependency.
 

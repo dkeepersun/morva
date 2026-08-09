@@ -1,0 +1,97 @@
+{
+  "schema_version": "0.1.0",
+  "snapshot_at": "2026-08-10T00:00:00+08:00",
+  "repo": "morva",
+  "collection_mode": "contract_static",
+  "collection_status": "COLLECTED",
+  "inventory_basis": "acceptance_criteria",
+  "gate_basis": "priority_thresholds",
+  "source_sha": "b70cce1",
+  "target": {
+    "type": "release",
+    "id": "v0.1",
+    "label": "Morva v0.1 semantic core"
+  },
+  "decision_mode": "deterministic",
+  "evaluator": "Codex / TEA trace",
+  "confidence": "high",
+  "oracle": {
+    "resolution_mode": "formal_requirements",
+    "confidence": "high",
+    "sources": [
+      "docs/requirements.md",
+      "docs/roadmap.md",
+      "approved implementation specs"
+    ],
+    "external_pointer_status": "not_used",
+    "synthetic": false
+  },
+  "coverage": {
+    "inventory": { "covered": 14, "total": 15, "pct": 93 },
+    "priority_breakdown": {
+      "P0": { "total": 10, "covered": 10, "pct": 100 },
+      "P1": { "total": 5, "covered": 4, "pct": 80 },
+      "P2": { "total": 0, "covered": 0, "pct": 100 },
+      "P3": { "total": 0, "covered": 0, "pct": 100 }
+    },
+    "by_level": {
+      "e2e": { "tests": 23 },
+      "api": { "tests": 75 },
+      "component": { "tests": 0 },
+      "unit": { "tests": 2 },
+      "other": { "tests": 0 }
+    }
+  },
+  "tests": {
+    "files": 4,
+    "cases": 100,
+    "skipped_cases": 0,
+    "fixme_cases": 0,
+    "pending_cases": 0
+  },
+  "risk_summary": {
+    "critical_open": 0,
+    "high_open": 0,
+    "medium_open": 0,
+    "low_open": 0
+  },
+  "heuristics": {
+    "endpoint_gaps": 0,
+    "auth_negative_path_status": "not_applicable",
+    "error_path_status": "present",
+    "ui_journey_status": "not_applicable",
+    "ui_state_status": "not_applicable"
+  },
+  "blockers": [],
+  "recommendations": [
+    {
+      "priority": "MEDIUM",
+      "action": "Define scaling thresholds and add a benchmark before making a hard large-file performance commitment.",
+      "requirements": ["NFR-04"]
+    },
+    {
+      "priority": "LOW",
+      "action": "Run hosted CI after publishing local commits; remote activation is operational evidence.",
+      "requirements": ["NFR-07"]
+    }
+  ],
+  "links": {
+    "trace_report_path": "_bmad-output/test-artifacts/traceability-matrix.md",
+    "trace_report_url": "",
+    "artifact_url": "",
+    "journey_evidence_url": ""
+  },
+  "gate_status": "CONCERNS",
+  "gate_criteria": {
+    "p0_coverage_required": "100%",
+    "p0_coverage_actual": "100%",
+    "p0_status": "MET",
+    "p1_coverage_target": "90%",
+    "p1_coverage_minimum": "80%",
+    "p1_coverage_actual": "80%",
+    "p1_status": "PARTIAL",
+    "overall_coverage_minimum": "80%",
+    "overall_coverage_actual": "93%",
+    "overall_status": "MET"
+  }
+}
