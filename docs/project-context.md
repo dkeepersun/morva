@@ -21,7 +21,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
 - `morva-core`: dependency-free library and sole language-semantics layer.
 - `morva-cli`: binary depending only on the local `morva-core` crate.
 - Tests use Rust's built-in test harness; no external test framework.
-- No database, network service, UI framework, auth, deployment runtime, or CI configuration.
+- No database, network service, UI framework, auth, or deployment runtime. GitHub Actions provides the repository quality gate only.
 
 ## Critical Implementation Rules
 

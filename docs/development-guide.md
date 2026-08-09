@@ -58,4 +58,4 @@ cargo run -p morva-cli -- simulate examples/order.morva NormalConfirmation
 - 一个提交应表达一个可验证意图，并包含相应测试和文档。
 - 未经明确请求不 push、不发布 crate、不创建远端资源。
 
-当前仓库没有 CI/CD 或部署配置；本地质量命令是唯一已记录门槛。
+同一组质量命令由 [GitHub Actions CI](ci.md) 在 push、pull request、手动和每周定时触发中自动执行；仓库仍没有部署配置。

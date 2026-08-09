@@ -1,5 +1,3 @@
 # Deferred Work
 
-## Engineering quality
-
-- Add a minimal CI workflow that runs `cargo fmt --check`, strict workspace Clippy, workspace tests, and the executable example commands. This is a pre-existing repository gap surfaced by the documentation-baseline review; the current increment records and verifies local gates but does not add deployment or automation infrastructure.
+No accepted deferred item remains. Add future items only when a reviewed increment deliberately leaves real work outside its boundary.

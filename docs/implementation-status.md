@@ -12,6 +12,7 @@
 - Canonical builtin、Boolean 谓词、比较操作数及 effect 值类型检查；解析失败后抑制派生类型诊断。
 - Scenario 结构、action 选择、arity、entity 参数绑定和 given 值检查。
 - `check`、`parse`、`inspect`、`simulate` CLI 与稳定退出码。
+- GitHub Actions 质量门禁：格式、严格 Clippy、职责分片测试、四命令示例与最终汇总检查。
 - 单 action、纯内存、enum/Boolean/Integer 状态模拟及七个阶段。
 - 91 个自动化测试：66 个 core 语法/语义/模拟公开 API 集成测试、2 个 core runtime guard 单元测试、23 个 CLI 进程级测试。
 - LF、CRLF、CR 统一作为单个逻辑换行；注释、parser 分隔、原源 byte span 与 CLI 混合换行行列保持一致。

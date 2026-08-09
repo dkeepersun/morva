@@ -1,0 +1,138 @@
+name: Test Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: Format and Clippy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install stable Rust with lint components
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Run strict Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  test:
+    name: Test (${{ matrix.suite }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [core-language, core-simulation, cli-process]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Run test shard
+        env:
+          TEST_SUITE: ${{ matrix.suite }}
+        run: |
+          case "$TEST_SUITE" in
+            core-language)
+              cargo test -p morva-core --locked --lib --test language
+              cargo test -p morva-core --locked --doc
+              ;;
+            core-simulation)
+              cargo test -p morva-core --locked --test simulation
+              ;;
+            cli-process)
+              cargo test -p morva-cli --locked --all-targets
+              ;;
+            *)
+              echo "unknown test suite: $TEST_SUITE" >&2
+              exit 2
+              ;;
+          esac
+
+  examples:
+    name: Executable examples
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Run documented command loop
+        run: |
+          cargo run --locked -p morva-cli -- check examples/order.morva
+          cargo run --locked -p morva-cli -- parse examples/order.morva
+          cargo run --locked -p morva-cli -- inspect examples/order.morva
+          cargo run --locked -p morva-cli -- simulate examples/order.morva NormalConfirmation
+
+  burn-in:
+    name: Burn-in
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install stable Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Run workspace tests three times
+        run: |
+          for iteration in 1 2 3; do
+            echo "Burn-in iteration $iteration/3"
+            cargo test --workspace --locked
+          done
+
+  report:
+    name: Quality gate
+    if: always()
+    needs: [lint, test, examples, burn-in]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Summarize gate results
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          EXAMPLES_RESULT: ${{ needs.examples.result }}
+          BURN_IN_RESULT: ${{ needs.burn-in.result }}
+        run: |
+          {
+            echo '## Morva quality gate'
+            echo
+            echo "- Lint: $LINT_RESULT"
+            echo "- Tests: $TEST_RESULT"
+            echo "- Examples: $EXAMPLES_RESULT"
+            echo "- Burn-in: $BURN_IN_RESULT"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$LINT_RESULT" != success ] ||
+             [ "$TEST_RESULT" != success ] ||
+             [ "$EXAMPLES_RESULT" != success ]; then
+            exit 1
+          fi
+          if [ "$BURN_IN_RESULT" != success ] && [ "$BURN_IN_RESULT" != skipped ]; then
+            exit 1
+          fi

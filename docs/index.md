@@ -23,6 +23,7 @@
 
 - [开发指南](development-guide.md)
 - [测试与质量策略](testing-strategy.md)
+- [CI 质量门禁](ci.md)
 - [源码树与职责](source-tree-analysis.md)
 - [CLI 设计与契约](cli.md)
 
