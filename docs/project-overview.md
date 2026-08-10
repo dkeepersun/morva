@@ -12,7 +12,7 @@ Morva 是一个实验性高层结构化语义语言，用于描述软件系统�
 | 核心 | `morva-core`：lexer/parser/AST/checker/simulator |
 | 用户入口 | `morva` CLI |
 | 外部依赖 | 无 |
-| 当前闭环 | source → parse → AST → check → diagnostics → inspect/simulate |
+| 当前闭环 | source(s) → per-file parse → project assembly → AST → check → diagnostics → inspect/simulate |
 | 当前模拟 | 单 action、纯内存、enum/Boolean/Integer |
 
 ## 当前价值

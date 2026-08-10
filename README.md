@@ -14,6 +14,7 @@ The current v0.1 scope is intentionally small:
 - fields, parameters, enum members, and `requires`, `effects`, `ensures`, and `invariant` clauses;
 - duplicate-name, type, field-path, enum-member, effect-target, canonical expression type, comparison, and effect-value checks;
 - deterministic `check`, `parse`, and `inspect` commands with source diagnostics;
+- file-or-directory input, so one system can be split across independently maintained `.morva` files;
 - pure in-memory simulation for one-action scenarios using enum, Boolean, and Integer state;
 - compatibility parsing for broader declarations and documented soft behavior already used by the example.
 
@@ -31,6 +32,24 @@ cargo run -p morva-cli -- simulate examples/order.morva NormalConfirmation
 All four commands parse and semantically check the model first. `parse` prints the
 currently modeled AST surface; compatibility-only text that the parser deliberately
 ignores is not reproduced.
+
+Each command also accepts a directory. A project directory contains direct-child,
+lowercase `.morva` regular files, each with the same `system` wrapper. Morva sorts
+the filenames by UTF-8 bytes, merges only those systems' child declarations, and
+reports errors against the original file and local line/column. Other extensions,
+subdirectories, and symlinks are ignored.
+
+```text
+examples/order-project/
+  10-types.morva
+  20-actions.morva
+  30-scenarios.morva
+```
+
+```sh
+cargo run -p morva-cli -- check examples/order-project
+cargo run -p morva-cli -- simulate examples/order-project NormalConfirmation
+```
 
 Example:
 

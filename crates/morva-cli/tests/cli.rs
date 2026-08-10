@@ -1,4 +1,5 @@
 use std::fs;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -24,6 +25,33 @@ fn temporary_model(label: &str, source: &[u8]) -> PathBuf {
     ));
     fs::write(&path, source).expect("write fixture");
     path
+}
+
+struct TemporaryProject(PathBuf);
+
+impl Deref for TemporaryProject {
+    type Target = Path;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Drop for TemporaryProject {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+fn temporary_project(label: &str) -> TemporaryProject {
+    let unique = NEXT_FILE.fetch_add(1, Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!("morva-{label}-{}-{unique}", std::process::id()));
+    fs::create_dir(&path).expect("create project fixture");
+    TemporaryProject(path)
+}
+
+fn write_project_source(project: &Path, name: &str, source: &[u8]) {
+    fs::write(project.join(name), source).expect("write project source");
 }
 
 fn text(bytes: &[u8]) -> String {
@@ -525,4 +553,324 @@ fn unknown_simulation_selection_exits_one_but_usage_stays_two() {
     assert_eq!(output.status.code(), Some(1));
     assert!(text(&output.stderr).contains("error[MORVA4001]"));
     assert_eq!(morva(&["simulate", "only-a-file"]).status.code(), Some(2));
+}
+
+#[test]
+fn all_commands_accept_a_sorted_multi_file_project() {
+    let project = temporary_project("commands");
+    write_project_source(
+        &project,
+        "20-behavior.morva",
+        br#"system Shop {
+  action Confirm(order: Order) {
+    requires order.status == Pending
+    effects order.status = Confirmed
+    ensures order.status == Confirmed
+  }
+  scenario Happy {
+    given order.status = Pending
+    run Confirm(order)
+    expect order.status == Confirmed
+  }
+}
+"#,
+    );
+    write_project_source(
+        &project,
+        "10-types.morva",
+        br#"system Shop {
+  enum State {
+    Pending
+    Confirmed
+  }
+  entity Order { status: State }
+}
+"#,
+    );
+    let path = project.to_str().unwrap();
+
+    let checked = morva(&["check", path]);
+    assert!(checked.status.success(), "{}", text(&checked.stderr));
+    assert!(text(&checked.stdout).contains("ok:"));
+
+    let parsed = morva(&["parse", path]);
+    assert!(parsed.status.success(), "{}", text(&parsed.stderr));
+    let parsed = text(&parsed.stdout);
+    assert!(parsed.find("enum State").unwrap() < parsed.find("action Confirm").unwrap());
+
+    let inspected = morva(&["inspect", path]);
+    assert!(inspected.status.success(), "{}", text(&inspected.stderr));
+    assert!(text(&inspected.stdout).contains("actions: 1"));
+
+    let simulated = morva(&["simulate", path, "Happy"]);
+    assert!(simulated.status.success(), "{}", text(&simulated.stderr));
+    assert!(text(&simulated.stdout).ends_with("result: PASS\n"));
+}
+
+#[test]
+fn project_discovery_ignores_non_candidates_subdirectories_and_symlinks() {
+    let project = temporary_project("filter");
+    write_project_source(&project, "model.morva", b"system Shop {}\n");
+    write_project_source(&project, "ignored.MORVA", b"system Wrong {}\n");
+    write_project_source(&project, "notes.txt", b"system Wrong {}\n");
+    let nested = project.join("nested");
+    fs::create_dir(&nested).unwrap();
+    write_project_source(&nested, "nested.morva", b"system Wrong {}\n");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(project.join("model.morva"), project.join("linked.morva")).unwrap();
+    #[cfg(unix)]
+    {
+        let outside = temporary_model("outside-project", b"system Wrong {}\n");
+        std::os::unix::fs::symlink(&outside, project.join("outside.morva")).unwrap();
+        let output = morva(&["inspect", project.to_str().unwrap()]);
+        fs::remove_file(outside).unwrap();
+        assert!(output.status.success(), "{}", text(&output.stderr));
+    }
+
+    let output = morva(&["inspect", project.to_str().unwrap()]);
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    assert_eq!(
+        text(&output.stdout),
+        "system: Shop\nenums: 0\nentities: 0\nactions: 0\nscenarios: 0\n"
+    );
+}
+
+#[test]
+fn project_errors_use_the_responsible_file_and_local_location() {
+    let syntax = temporary_project("project-syntax");
+    write_project_source(&syntax, "10-ok.morva", b"system Shop {}\n");
+    write_project_source(
+        &syntax,
+        "20-bad.morva",
+        b"system Shop {\n  action Broken(item Item) {}\n}\n",
+    );
+    let output = morva(&["check", syntax.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    let stderr = text(&output.stderr);
+    assert!(stderr.contains("20-bad.morva:2:22"), "{stderr}");
+    assert!(!stderr.contains("10-ok.morva:"));
+    let (excerpt, marker) = diagnostic_content(&stderr, 2);
+    assert_eq!(excerpt, "  action Broken(item Item) {}");
+    assert_eq!(marker, "                     ^^^^");
+
+    let semantic = temporary_project("project-semantic");
+    write_project_source(
+        &semantic,
+        "10-type.morva",
+        b"system Shop { entity Item { active: Boolean } }\n",
+    );
+    write_project_source(
+        &semantic,
+        "20-action.morva",
+        b"system Shop { action Check(item: Item) { requires item.missing } }\n",
+    );
+    let output = morva(&["check", semantic.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = text(&output.stderr);
+    let missing = "system Shop { action Check(item: Item) { requires item.missing } }"
+        .find("missing")
+        .unwrap();
+    assert!(
+        stderr.contains(&format!("20-action.morva:1:{}", missing + 1)),
+        "{stderr}"
+    );
+    let (excerpt, marker) = diagnostic_content(&stderr, 1);
+    assert_eq!(
+        excerpt,
+        "system Shop { action Check(item: Item) { requires item.missing } }"
+    );
+    assert_eq!(marker, format!("{}^^^^^^^", " ".repeat(missing)));
+}
+
+#[test]
+fn project_runtime_failure_maps_to_its_local_source() {
+    let project = temporary_project("project-runtime");
+    write_project_source(
+        &project,
+        "10-type.morva",
+        b"system Shop { entity Counter { count: Integer } }\n",
+    );
+    write_project_source(
+        &project,
+        "20-behavior.morva",
+        br#"system Shop {
+  action Read(counter: Counter) { requires counter.count > 0 }
+  scenario Bad {
+    given counter.count = 0
+    run Read(counter)
+    expect true
+  }
+}
+"#,
+    );
+    let output = morva(&["simulate", project.to_str().unwrap(), "Bad"]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(text(&output.stdout).contains("result: FAIL"));
+    let stderr = text(&output.stderr);
+    let predicate = "  action Read(counter: Counter) { requires counter.count > 0 }"
+        .find("counter.count > 0")
+        .unwrap();
+    assert!(
+        stderr.contains(&format!("20-behavior.morva:2:{}", predicate + 1)),
+        "{stderr}"
+    );
+    let (excerpt, marker) = diagnostic_content(&stderr, 2);
+    assert_eq!(
+        excerpt,
+        "  action Read(counter: Counter) { requires counter.count > 0 }"
+    );
+    assert_eq!(
+        marker,
+        format!("{}{}", " ".repeat(predicate), "^".repeat(17))
+    );
+}
+
+#[test]
+fn empty_or_non_utf8_projects_exit_two_without_stdout() {
+    let empty = temporary_project("empty");
+    let output = morva(&["check", empty.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+
+    let invalid = temporary_project("invalid-utf8");
+    write_project_source(&invalid, "model.morva", b"system Shop {}\n");
+    write_project_source(&invalid, "other.morva", b"\xff");
+    let output = morva(&["parse", invalid.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(text(&output.stderr).contains("other.morva"));
+}
+
+#[cfg(unix)]
+#[test]
+fn project_diagnostics_escape_control_characters_in_paths() {
+    let project = temporary_project("project-path-\n\t\r\u{1b}\u{7f}");
+    write_project_source(
+        &project,
+        "bad-\n\t\r\u{1b}\u{7f}.morva",
+        b"system Shop { action Broken(item Item) {} }\n",
+    );
+    let output = morva(&["check", project.to_str().unwrap()]);
+
+    assert_eq!(output.status.code(), Some(1));
+    let stderr = text(&output.stderr);
+    assert!(stderr.contains(r"project-path-\n\t\r\u{1b}\u{7f}"));
+    assert!(stderr.contains(r"bad-\n\t\r\u{1b}\u{7f}.morva"));
+    assert!(!stderr.contains("project-path-\n"));
+    assert!(!stderr.contains("bad-\n"));
+    assert!(!stderr.contains('\t'));
+    assert!(!stderr.contains('\r'));
+    assert!(!stderr.contains('\u{1b}'));
+    assert!(!stderr.contains('\u{7f}'));
+}
+
+#[test]
+fn project_shell_errors_have_precise_local_diagnostics() {
+    for (label, source, message, column, carets) in [
+        (
+            "missing-system",
+            "entity Loose {}\n",
+            "must contain one top-level system",
+            1,
+            "^^^^^^^^^^^^^^^",
+        ),
+        (
+            "multiple-systems",
+            "system Shop {}\nsystem Shop {}\n",
+            "multiple top-level systems",
+            8,
+            "^^^^",
+        ),
+        (
+            "mismatched-system",
+            "system Other {}\n",
+            "does not match expected system 'Shop'",
+            8,
+            "^^^^^",
+        ),
+    ] {
+        let project = temporary_project(label);
+        write_project_source(&project, "10-good.morva", b"system Shop {}\n");
+        write_project_source(&project, "20-bad.morva", source.as_bytes());
+        let output = morva(&["check", project.to_str().unwrap()]);
+        assert_eq!(output.status.code(), Some(1));
+        assert!(output.stdout.is_empty());
+        let stderr = text(&output.stderr);
+        assert!(stderr.contains(message), "{label}: {stderr}");
+        let expected_line = if label == "multiple-systems" { 2 } else { 1 };
+        assert!(
+            stderr.contains(&format!("20-bad.morva:{expected_line}:{column}")),
+            "{label}: {stderr}"
+        );
+        let (excerpt, marker) = diagnostic_content(&stderr, expected_line);
+        assert_eq!(excerpt, source.lines().nth(expected_line - 1).unwrap());
+        assert_eq!(marker, format!("{}{}", " ".repeat(column - 1), carets));
+    }
+}
+
+#[test]
+fn project_filenames_use_utf8_byte_order() {
+    let project = temporary_project("utf8-order");
+    write_project_source(
+        &project,
+        "z.morva",
+        b"system Shop {\n  enum Zed {\n    Item\n  }\n}\n",
+    );
+    write_project_source(
+        &project,
+        "é.morva",
+        b"system Shop {\n  enum Accent {\n    Item\n  }\n}\n",
+    );
+    let output = morva(&["parse", project.to_str().unwrap()]);
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    let stdout = text(&output.stdout);
+    assert!(stdout.find("enum Zed").unwrap() < stdout.find("enum Accent").unwrap());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn non_utf8_candidate_filename_exits_two_without_stdout() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    let project = temporary_project("non-utf8-name");
+    let name = OsString::from_vec(b"bad-\xff.morva".to_vec());
+    fs::write(project.join(name), b"system Shop {}\n").unwrap();
+    let output = morva(&["check", project.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let stderr = text(&output.stderr);
+    assert!(stderr.contains("filename"));
+    assert!(stderr.contains("not valid UTF-8"));
+}
+
+#[cfg(unix)]
+#[test]
+fn unreadable_project_source_exits_two_without_stdout() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let project = temporary_project("unreadable");
+    let source = project.join("model.morva");
+    fs::write(&source, b"system Shop {}\n").unwrap();
+    fs::set_permissions(&source, fs::Permissions::from_mode(0o000)).unwrap();
+    let output = morva(&["check", project.to_str().unwrap()]);
+    fs::set_permissions(&source, fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(text(&output.stderr).contains("cannot read"));
+}
+
+#[cfg(unix)]
+#[test]
+fn unreadable_project_directory_exits_two_without_stdout() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let project = temporary_project("unreadable-directory");
+    fs::set_permissions(&*project, fs::Permissions::from_mode(0o000)).unwrap();
+    let output = morva(&["check", project.to_str().unwrap()]);
+    fs::set_permissions(&*project, fs::Permissions::from_mode(0o700)).unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(text(&output.stderr).contains("cannot read project directory"));
 }

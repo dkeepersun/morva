@@ -11,6 +11,30 @@ impl Span {
             end: end.end,
         }
     }
+
+    pub(crate) fn checked_rebase(self, base: usize) -> Option<Self> {
+        Some(Self {
+            start: self.start.checked_add(base)?,
+            end: self.end.checked_add(base)?,
+        })
+    }
+}
+
+pub(crate) trait RebaseSpans {
+    fn rebase_spans(&mut self, base: usize) -> Option<()>;
+}
+
+impl RebaseSpans for Span {
+    fn rebase_spans(&mut self, base: usize) -> Option<()> {
+        *self = self.checked_rebase(base)?;
+        Some(())
+    }
+}
+
+impl RebaseSpans for Name {
+    fn rebase_spans(&mut self, base: usize) -> Option<()> {
+        self.span.rebase_spans(base)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,6 +47,16 @@ pub struct Name {
 pub struct Document {
     pub declarations: Vec<Declaration>,
     pub span: Span,
+}
+
+impl RebaseSpans for Document {
+    fn rebase_spans(&mut self, base: usize) -> Option<()> {
+        self.span.rebase_spans(base)?;
+        for declaration in &mut self.declarations {
+            declaration.rebase_spans(base)?;
+        }
+        Some(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,12 +112,42 @@ impl Declaration {
     }
 }
 
+impl RebaseSpans for Declaration {
+    fn rebase_spans(&mut self, base: usize) -> Option<()> {
+        match self {
+            Self::System(item) => item.rebase_spans(base),
+            Self::Entity(item) => item.rebase_spans(base),
+            Self::Enum(item) => item.rebase_spans(base),
+            Self::Action(item) => item.rebase_spans(base),
+            Self::Scenario(item) => item.rebase_spans(base),
+            Self::Container(item) => item.rebase_spans(base),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct System {
     pub name: Name,
     pub declarations: Vec<Declaration>,
     pub span: Span,
 }
+
+macro_rules! rebase_named_declarations {
+    ($type:ty) => {
+        impl RebaseSpans for $type {
+            fn rebase_spans(&mut self, base: usize) -> Option<()> {
+                self.name.rebase_spans(base)?;
+                self.span.rebase_spans(base)?;
+                for declaration in &mut self.declarations {
+                    declaration.rebase_spans(base)?;
+                }
+                Some(())
+            }
+        }
+    };
+}
+
+rebase_named_declarations!(System);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Container {
@@ -93,12 +157,28 @@ pub struct Container {
     pub span: Span,
 }
 
+rebase_named_declarations!(Container);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entity {
     pub name: Name,
     pub fields: Vec<Field>,
     pub invariants: Vec<Expr>,
     pub span: Span,
+}
+
+impl RebaseSpans for Entity {
+    fn rebase_spans(&mut self, base: usize) -> Option<()> {
+        self.name.rebase_spans(base)?;
+        self.span.rebase_spans(base)?;
+        for field in &mut self.fields {
+            field.rebase_spans(base)?;
+        }
+        for invariant in &mut self.invariants {
+            invariant.rebase_spans(base)?;
+        }
+        Some(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,11 +188,30 @@ pub struct Enum {
     pub span: Span,
 }
 
+impl RebaseSpans for Enum {
+    fn rebase_spans(&mut self, base: usize) -> Option<()> {
+        self.name.rebase_spans(base)?;
+        self.span.rebase_spans(base)?;
+        for member in &mut self.members {
+            member.rebase_spans(base)?;
+        }
+        Some(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Field {
     pub name: Name,
     pub type_name: Name,
     pub span: Span,
+}
+
+impl RebaseSpans for Field {
+    fn rebase_spans(&mut self, base: usize) -> Option<()> {
+        self.name.rebase_spans(base)?;
+        self.type_name.rebase_spans(base)?;
+        self.span.rebase_spans(base)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -123,6 +222,20 @@ pub struct Action {
     pub span: Span,
 }
 
+impl RebaseSpans for Action {
+    fn rebase_spans(&mut self, base: usize) -> Option<()> {
+        self.name.rebase_spans(base)?;
+        self.span.rebase_spans(base)?;
+        for parameter in &mut self.parameters {
+            parameter.rebase_spans(base)?;
+        }
+        for clause in &mut self.clauses {
+            clause.rebase_spans(base)?;
+        }
+        Some(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Parameter {
     pub name: Name,
@@ -130,11 +243,30 @@ pub struct Parameter {
     pub span: Span,
 }
 
+impl RebaseSpans for Parameter {
+    fn rebase_spans(&mut self, base: usize) -> Option<()> {
+        self.name.rebase_spans(base)?;
+        self.type_name.rebase_spans(base)?;
+        self.span.rebase_spans(base)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Scenario {
     pub name: Name,
     pub items: Vec<ScenarioItem>,
     pub span: Span,
+}
+
+impl RebaseSpans for Scenario {
+    fn rebase_spans(&mut self, base: usize) -> Option<()> {
+        self.name.rebase_spans(base)?;
+        self.span.rebase_spans(base)?;
+        for item in &mut self.items {
+            item.rebase_spans(base)?;
+        }
+        Some(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -154,6 +286,16 @@ impl ScenarioItem {
     }
 }
 
+impl RebaseSpans for ScenarioItem {
+    fn rebase_spans(&mut self, base: usize) -> Option<()> {
+        match self {
+            Self::Given(item) => item.rebase_spans(base),
+            Self::Run(item) => item.rebase_spans(base),
+            Self::Expect(item) => item.rebase_spans(base),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Run {
     pub action: Name,
@@ -161,11 +303,32 @@ pub struct Run {
     pub span: Span,
 }
 
+impl RebaseSpans for Run {
+    fn rebase_spans(&mut self, base: usize) -> Option<()> {
+        self.action.rebase_spans(base)?;
+        self.span.rebase_spans(base)?;
+        for argument in &mut self.arguments {
+            argument.rebase_spans(base)?;
+        }
+        Some(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Clause {
     pub kind: ClauseKind,
     pub expressions: Vec<ClauseExpression>,
     pub span: Span,
+}
+
+impl RebaseSpans for Clause {
+    fn rebase_spans(&mut self, base: usize) -> Option<()> {
+        self.span.rebase_spans(base)?;
+        for expression in &mut self.expressions {
+            expression.rebase_spans(base)?;
+        }
+        Some(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -202,12 +365,29 @@ impl ClauseExpression {
     }
 }
 
+impl RebaseSpans for ClauseExpression {
+    fn rebase_spans(&mut self, base: usize) -> Option<()> {
+        match self {
+            Self::Predicate(item) => item.rebase_spans(base),
+            Self::Assignment(item) => item.rebase_spans(base),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Assignment {
     pub target: Path,
     pub operator: AssignmentOperator,
     pub value: Expr,
     pub span: Span,
+}
+
+impl RebaseSpans for Assignment {
+    fn rebase_spans(&mut self, base: usize) -> Option<()> {
+        self.target.rebase_spans(base)?;
+        self.value.rebase_spans(base)?;
+        self.span.rebase_spans(base)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -221,6 +401,20 @@ pub enum AssignmentOperator {
 pub struct Expr {
     pub kind: ExprKind,
     pub span: Span,
+}
+
+impl RebaseSpans for Expr {
+    fn rebase_spans(&mut self, base: usize) -> Option<()> {
+        self.span.rebase_spans(base)?;
+        match &mut self.kind {
+            ExprKind::Path(path) => path.rebase_spans(base),
+            ExprKind::Binary { left, right, .. } => {
+                left.rebase_spans(base)?;
+                right.rebase_spans(base)
+            }
+            ExprKind::Integer(_) | ExprKind::Boolean(_) => Some(()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -258,5 +452,15 @@ impl Path {
             .map(|item| item.text.as_str())
             .collect::<Vec<_>>()
             .join(".")
+    }
+}
+
+impl RebaseSpans for Path {
+    fn rebase_spans(&mut self, base: usize) -> Option<()> {
+        self.span.rebase_spans(base)?;
+        for segment in &mut self.segments {
+            segment.rebase_spans(base)?;
+        }
+        Some(())
     }
 }

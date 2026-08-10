@@ -17,6 +17,10 @@ cargo run -p morva-cli -- check examples/order.morva
 cargo run -p morva-cli -- parse examples/order.morva
 cargo run -p morva-cli -- inspect examples/order.morva
 cargo run -p morva-cli -- simulate examples/order.morva NormalConfirmation
+cargo run -p morva-cli -- check examples/order-project
+cargo run -p morva-cli -- parse examples/order-project
+cargo run -p morva-cli -- inspect examples/order-project
+cargo run -p morva-cli -- simulate examples/order-project NormalConfirmation
 ```
 
 ## 2. 测试层级
@@ -24,9 +28,10 @@ cargo run -p morva-cli -- simulate examples/order.morva NormalConfirmation
 | 层级 | 位置 | 目标 |
 |---|---|---|
 | Core language integration | `crates/morva-core/tests/language.rs` | AST、语法、静态诊断和回归边界 |
+| Core project integration | `crates/morva-core/tests/project.rs` | 多文件装配、跨文件引用、source map、模拟与单文件 API parity |
 | Simulation integration | `crates/morva-core/tests/simulation.rs` | 阶段顺序、状态变化、失败与公开 API |
 | CLI process integration | `crates/morva-cli/tests/cli.rs` | stdout/stderr、位置、退出码、文件与用法错误 |
-| Executable example | `examples/order.morva` | 最小闭环的人工可读基线 |
+| Executable examples | `examples/order.morva`, `examples/order-project/` | 单文件与平铺多文件最小闭环基线 |
 
 ## 3. 新语义的最低测试矩阵
 

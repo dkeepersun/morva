@@ -5,13 +5,13 @@
 Morva 是一个单一产品、双 crate 的 Rust workspace。核心采用管线式架构：源码依次经过 lexer、parser、AST、semantic check；CLI 和 simulator 都只消费这套公共模型。
 
 ```text
-.morva source
+.morva source(s)
       │
       ▼
-lexer ──► tokens + byte spans
+per-source lexer/parser ──► local AST + byte spans
       │
       ▼
-parser ─► typed AST + source spans
+project assembler ─► merged AST + virtual spans + source map
       │
       ▼
 semantic check ─► stable diagnostics
@@ -37,6 +37,7 @@ presentation     language semantics
 公开能力：
 
 - `parse(&str) -> Result<Document, Vec<Diagnostic>>`
+- `Project::parse(sources) -> Result<Project, Vec<ProjectDiagnostic>>`
 - `check(&Document) -> Vec<Diagnostic>`
 - `simulate(&Document, &str) -> Result<SimulationReport, Diagnostic>`
 - AST、diagnostic 和 simulation report 类型
@@ -48,19 +49,20 @@ presentation     language semantics
 | `ast.rs` | 带 span 的声明、表达式、赋值和 scenario 模型 | 查找、验证、执行 |
 | `lexer.rs` | 把 UTF-8 源码分解为 token，拒绝不支持字符 | 语法和语义恢复 |
 | `parser.rs` | 构造强类型 AST，维护兼容解析白名单 | 名称解析、类型检查 |
+| `project.rs` | 装配同名 system、分配 checked virtual span、回映射 `SourceId + LocalSourceSpan` | 文件发现、IO、模块语义 |
 | `semantic.rs` | 建索引并检查声明、引用、effect、scenario 结构和有限字面量事实一致性 | 形式化证明、完整类型系统 |
 | `diagnostic.rs` | 稳定 code/message/span 数据模型 | 行列和终端渲染 |
 | `simulate.rs` | runtime `Value`/report 模型；解释一个已检查 scenario 的内存状态变化 | IO、应用代码、持久化、并发 |
 
 ### `morva-cli`
 
-职责：读取文件、路由命令、调用 core、渲染诊断和报告、返回稳定退出码。CLI 不能独立解释语言语义；未承诺的装饰性格式可以调整，但诊断代码、退出码以及测试或文档明确承诺的字段、顺序和文本属于兼容性边界，变更前必须显式评审。
+职责：读取单文件或发现目录的直接 `.morva` 普通文件、路由命令、调用 core、渲染诊断和报告、返回稳定退出码。目录发现按文件名字节序排序并忽略子目录/symlink；装配与语义仍由 core 负责。CLI 不能独立解释语言语义；未承诺的装饰性格式可以调整，但诊断代码、退出码以及测试或文档明确承诺的字段、顺序和文本属于兼容性边界，变更前必须显式评审。
 
 ## 3. 核心数据模型
 
 `Document` 包含声明树。强类型声明为 `System`、`Entity`、`Enum`、`Action`、`Scenario`；其他已识别声明使用 `Container` 保存层级但不提供专有语义。
 
-表达式当前仅包含 Integer、Boolean、Path 和二元比较。effects 使用独立 `Assignment`，从类型层面区分谓词与状态写入。`Span` 使用 UTF-8 字节区间，CLI 在呈现时计算行列。
+表达式当前仅包含 Integer、Boolean、Path 和二元比较。effects 使用独立 `Assignment`，从类型层面区分谓词与状态写入。`Span` 使用 UTF-8 字节区间；单文件 AST 保持本地 offset，多文件私有 merged AST 使用互不重叠的 checked virtual base。`SourceMap::locate_virtual_span` 只接受 merged document 的虚拟 span，并在 CLI 呈现前恢复 `SourceId + LocalSourceSpan`；`ProjectDiagnostic::Source` 已明确持有本地 diagnostic，不能再次回映射。公开 `Span` 与 `Diagnostic` 形状不变。
 
 ## 4. 名称与类型解析
 
@@ -98,6 +100,7 @@ presentation     language semantics
 - Simulator 的静态选择错误返回 `Diagnostic`；执行期失败写入 `SimulationReport.failure`。
 - CLI 把语言/模拟失败映射到退出码 1，把用法/文件 IO 映射到 2。
 - 不可信输入不得触发 panic；测试覆盖字符、溢出、未初始化和无效结构等边界。
+- CLI 对项目候选执行 symlink metadata、canonical root、打开文件句柄及打开前后文件身份校验，读取绑定到已验证句柄。纯标准库没有跨平台原子 `nofollow` open；Unix 使用 device/inode 强身份，其他平台退化为 length/modified 校验。并发原地改写同一 inode 的内容仍不提供快照隔离，这是无 watch/增量承诺下保留的 TOCTOU 残余。
 
 ## 7. 架构约束
 

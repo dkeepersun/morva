@@ -1,0 +1,12 @@
+system Shop {
+  enum OrderStatus {
+    Pending
+    Confirmed
+    Cancelled
+  }
+
+  entity Order {
+    id: Id
+    status: OrderStatus
+  }
+}

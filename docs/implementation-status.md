@@ -13,6 +13,7 @@
 - Action 前/后态的有限精确字面量事实一致性检查，以及顺序 effects 最终已知直接赋值与后置约束检查（`MORVA2018/2019`）。
 - Scenario 结构、action 选择、arity、entity 参数绑定和 given 值检查。
 - `check`、`parse`、`inspect`、`simulate` CLI 与稳定退出码。
+- 四个命令接受单文件或平铺项目目录；core 以同名 system 装配跨文件声明，用 source map 将语法、语义和模拟失败定位回原文件本地 span。
 - GitHub Actions 质量门禁已在本地提交中配置：格式、严格 Clippy、职责分片测试、四命令示例与最终汇总检查。该提交尚未推送，因此远程 GitHub Actions 尚未运行，`Quality gate` 也尚未设为 branch protection 必需检查。
 - 单 action、纯内存、enum/Boolean/Integer 状态模拟及七个阶段。
 - 自动化测试覆盖 core 语法、语义、模拟公开 API、runtime guard 与 CLI 进程级契约；当前总数以 `cargo test --workspace --locked` 的实际结果为准。
@@ -43,6 +44,8 @@
 ### 作用域与协议
 
 - 没有模块作用域或限定名，同名短类型直接报歧义。
+- 多文件项目不递归、不支持 manifest/import/container reopening；目录发现仅限直接子级小写 `.morva` 普通文件。
+- 项目读取拒绝 symlink、目录外 canonical target 和发现后身份变化；Unix 以 device/inode 复核打开句柄。标准库无法跨平台提供原子 `nofollow`，非 Unix 身份校验较弱，且并发原地改写同一文件不承诺快照隔离。
 - `parse`/`inspect` 是稳定文本而非 JSON 协议。
 - 没有增量分析、formatter、Tree-sitter 或 LSP。
 

@@ -56,6 +56,7 @@ jobs:
           case "$TEST_SUITE" in
             core-language)
               cargo test -p morva-core --locked --lib --test language
+              cargo test -p morva-core --locked --test project
               cargo test -p morva-core --locked --doc
               ;;
             core-simulation)
@@ -86,6 +87,10 @@ jobs:
           cargo run --locked -p morva-cli -- parse examples/order.morva
           cargo run --locked -p morva-cli -- inspect examples/order.morva
           cargo run --locked -p morva-cli -- simulate examples/order.morva NormalConfirmation
+          cargo run --locked -p morva-cli -- check examples/order-project
+          cargo run --locked -p morva-cli -- parse examples/order-project
+          cargo run --locked -p morva-cli -- inspect examples/order-project
+          cargo run --locked -p morva-cli -- simulate examples/order-project NormalConfirmation
 
   burn-in:
     name: Burn-in

@@ -1,0 +1,7 @@
+system Shop {
+  scenario NormalConfirmation {
+    given order.status = Pending
+    run Confirm(order)
+    expect order.status == Confirmed
+  }
+}

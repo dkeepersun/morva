@@ -4,7 +4,7 @@
 
 ## 1. 文件与词法
 
-- 项目约定扩展名：`.morva`；当前 CLI 不强制检查文件后缀。
+- 单文件输入不强制检查后缀。目录输入只选择直接子级中扩展名精确为小写 `.morva` 的普通文件，忽略其他文件、子目录和 symlink，并按 UTF-8 文件名字节序装配。
 - 标识符：ASCII 字母或 `_` 开头，后续可含 ASCII 数字。
 - LF、CRLF、CR 各表示一个逻辑换行；CRLF 虽占两个 byte，但只作为一个分隔符。混合使用时也按每个序列一行计数，源码 span 不经过换行规范化。
 - 注释：`//` 到任一受支持换行之前。
@@ -22,6 +22,18 @@ system Shop {
 ```
 
 必须恰好有一个顶层 `system`。system 内可以嵌套声明；任何嵌套 system 都是错误。
+
+一个系统也可平铺到多个文件；每个文件保留一个同名 system 外壳：
+
+```morva
+// 10-types.morva
+system Shop { entity Order { status: OrderStatus } }
+
+// 20-actions.morva
+system Shop { action Confirm(order: Order) {} }
+```
+
+装配只合并根 system 的子声明，之后继续使用全局短名解析。文件之间没有 import、模块作用域或 container reopening 语义。
 
 ## 3. 强类型声明
 
@@ -160,7 +172,7 @@ Effects 按源码顺序生效，Integer `+=/-=` 使用 checked arithmetic。失�
 
 ## 9. 不受支持的语法/语义
 
-当前不支持负整数字面量、Decimal/String/ID 字面量、逻辑运算、函数调用、嵌套对象构造、模块限定名、import、flow/lifecycle 执行、事件、时间、重试执行、IO 或通用代码块。
+当前不支持负整数字面量、Decimal/String/ID 字面量、逻辑运算、函数调用、嵌套对象构造、模块限定名、import、递归项目发现、manifest、flow/lifecycle 执行、事件、时间、重试执行、IO 或通用代码块。
 
 ## 10. 稳定性说明
 

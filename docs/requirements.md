@@ -55,6 +55,8 @@ grill / challenge / review（规划中）
 
 - 项目、语言和命令统一使用 `Morva` / `morva`；`.morva` 是源码文件约定，当前 CLI 不按后缀拒绝输入。
 - 文档必须恰好包含一个顶层 `system`；禁止嵌套 `system`。
+- CLI 输入可为单文件或项目目录。目录只装配直接子级中小写 `.morva` 普通文件；忽略其他文件、子目录和 symlink，候选文件名必须是有效 UTF-8 并按其字节序排序。每个候选文件必须独立解析并恰有一个同名顶层 `system`，装配只合并 system 子声明。
+- 多文件项目沿用全局短名语义，不引入 import、module scope、递归目录或跨项目依赖；诊断与模拟失败必须回映到责任文件的本地 span 和行列。
 - 标识符当前只支持 ASCII。
 - LF、CRLF、CR 各表示一个逻辑换行；CRLF 只产生一个换行 token，`//` 注释在任一换行前结束，span 保留原文件 byte offset。
 
@@ -93,10 +95,10 @@ grill / challenge / review（规划中）
 
 ### FR-06 CLI
 
-- `morva check <file>`：解析并执行当前语义检查。
-- `morva parse <file>`：对通过当前语义检查的模型，输出强类型 AST 中已建模的声明内容；不回显被忽略的兼容文本。
-- `morva inspect <file>`：输出稳定的语义摘要文本。
-- `morva simulate <file> <scenario>`：执行一个已检查的最小场景。
+- `morva check <file-or-directory>`：解析、装配并执行当前语义检查。
+- `morva parse <file-or-directory>`：对通过当前语义检查的模型，输出强类型 AST 中已建模的声明内容；不回显被忽略的兼容文本。
+- `morva inspect <file-or-directory>`：输出稳定的语义摘要文本。
+- `morva simulate <file-or-directory> <scenario>`：执行一个已检查的最小场景。
 - 退出码固定为：成功 `0`，模型无效或模拟失败 `1`，用法/文件错误 `2`。
 
 ### FR-07 最小模型级模拟
@@ -118,7 +120,7 @@ grill / challenge / review（规划中）
 - NFR-01 正确性：每项新增语义必须有正常、失败和边界测试。
 - NFR-02 稳定性：诊断代码、CLI 退出码和已承诺输出变更必须显式评审。
 - NFR-03 安全性：解析和渲染不因不可信源码 panic，不执行模型携带的代码或 IO。
-- NFR-04 性能：v0.1 以单文件、线性或接近线性的处理为目标；不先行建设增量框架。
+- NFR-04 性能：v0.1 以输入总量上线性或接近线性的处理为目标；不先行建设增量框架。
 - NFR-05 可移植性：核心使用 Rust 标准库，CLI 可构建为单二进制。
 - NFR-06 可维护性：语义只在 `morva-core` 实现；CLI 不复制检查规则。
 - NFR-07 可复现性：格式、lint、测试与示例命令必须在交付前全部通过。

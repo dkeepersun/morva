@@ -8,7 +8,7 @@
 - 主语言：Rust 2024 edition
 - 架构：lexer → parser → typed AST → semantic check → CLI/simulator
 - Source of Truth：经过人工审核的 `.morva` 源码
-- 当前状态：v0.1 semantic core、最小 single-action simulate、静态表达式类型、有界诊断与通用换行契约已完成；CI 已在本地配置，尚未推送或由 GitHub 托管运行
+- 当前状态：v0.1 semantic core、平铺多文件项目装配、最小 single-action simulate、静态表达式类型、有界诊断与通用换行契约已完成；CI 已在本地配置，尚未推送或由 GitHub 托管运行
 
 ## 必读文档
 

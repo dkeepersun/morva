@@ -1,0 +1,13 @@
+system Shop {
+  action Confirm(order: Order) {
+    idempotent by order.id
+    requires order.status == Pending
+    effects order.status = Confirmed
+    ensures order.status == Confirmed
+
+    implementation_hint {
+      storage: relational
+      consistency: strong
+    }
+  }
+}
