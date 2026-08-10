@@ -561,7 +561,8 @@ fn all_commands_accept_a_sorted_multi_file_project() {
     write_project_source(
         &project,
         "20-behavior.morva",
-        br#"system Shop {
+        br#"/* behavior /* remains nested */ notes */
+system Shop {
   action Confirm(order: Order) {
     requires order.status == Pending
     effects order.status = Confirmed
@@ -578,7 +579,10 @@ fn all_commands_accept_a_sorted_multi_file_project() {
     write_project_source(
         &project,
         "10-types.morva",
-        br#"system Shop {
+        br#"/* types
+   /* nested */
+*/
+system Shop {
   enum State {
     Pending
     Confirmed
@@ -873,4 +877,133 @@ fn unreadable_project_directory_exits_two_without_stdout() {
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
     assert!(text(&output.stderr).contains("cannot read project directory"));
+}
+
+#[test]
+fn block_comments_preserve_the_single_file_four_command_loop() {
+    let commented_source = br#"/* model rationale
+   /* nested detail */
+*/
+system /* name */ Shop {
+  entity Switch { enabled: Boolean }
+  action Enable(switch: Switch) {
+    effects switch.enabled = true /* state transition */
+  }
+  scenario Happy {
+    given switch.enabled = false
+    run Enable(switch)
+    expect switch.enabled == true
+  }
+}
+"#;
+    let plain_source = br#"
+
+
+system   Shop {
+  entity Switch { enabled: Boolean }
+  action Enable(switch: Switch) {
+    effects switch.enabled = true
+  }
+  scenario Happy {
+    given switch.enabled = false
+    run Enable(switch)
+    expect switch.enabled == true
+  }
+}
+"#;
+    let commented = temporary_model("block-comments", commented_source);
+    let plain = temporary_model("plain-comments-equivalent", plain_source);
+    let commented_path = commented.to_str().unwrap();
+    let plain_path = plain.to_str().unwrap();
+
+    let checked = morva(&["check", commented_path]);
+    assert!(checked.status.success(), "{}", text(&checked.stderr));
+
+    for command in ["parse", "inspect"] {
+        let commented_output = morva(&[command, commented_path]);
+        let plain_output = morva(&[command, plain_path]);
+        assert!(
+            commented_output.status.success(),
+            "{command}: {}",
+            text(&commented_output.stderr)
+        );
+        assert_eq!(commented_output.stdout, plain_output.stdout);
+        let stdout = text(&commented_output.stdout);
+        assert!(!stdout.contains("model rationale"));
+        assert!(!stdout.contains("state transition"));
+    }
+
+    let simulated = morva(&["simulate", commented_path, "Happy"]);
+    let plain_simulated = morva(&["simulate", plain_path, "Happy"]);
+    assert!(simulated.status.success(), "{}", text(&simulated.stderr));
+    assert_eq!(simulated.stdout, plain_simulated.stdout);
+    let stdout = text(&simulated.stdout);
+    assert_eq!(
+        stdout
+            .lines()
+            .filter(|line| line.starts_with("  ") && line.ends_with(": PASS"))
+            .count(),
+        7
+    );
+    assert!(stdout.contains("  switch.enabled: true"));
+    assert!(stdout.ends_with("result: PASS\n"));
+
+    fs::remove_file(commented).unwrap();
+    fs::remove_file(plain).unwrap();
+}
+
+#[test]
+fn unterminated_block_comment_cli_diagnostic_marks_the_outer_two_bytes() {
+    let source = b"system Shop {\r\n  /* outer\n     /* inner still open";
+    let path = temporary_model("unterminated-block-comment", source);
+    let output = morva(&["check", path.to_str().unwrap()]);
+    fs::remove_file(path).unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    let stderr = text(&output.stderr);
+    assert!(stderr.contains("error[MORVA1024]: unterminated block comment"));
+    assert!(stderr.contains(":2:3"), "{stderr}");
+    let (excerpt, marker) = diagnostic_content(&stderr, 2);
+    assert_eq!(excerpt, "  /* outer");
+    assert_eq!(marker, "  ^^");
+}
+
+#[test]
+fn later_project_source_unterminated_comment_uses_local_path_line_and_marker() {
+    let project = temporary_project("later-comment-error");
+    write_project_source(&project, "10-good.morva", b"system Shop {}\n");
+    write_project_source(
+        &project,
+        "20-bad.morva",
+        b"system Shop {\r\n  entity Item {}\r\n  /* outer\r\n     /* inner still open",
+    );
+    let output = morva(&["check", project.to_str().unwrap()]);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    let stderr = text(&output.stderr);
+    assert!(stderr.contains("error[MORVA1024]: unterminated block comment"));
+    assert!(stderr.contains("20-bad.morva:3:3"), "{stderr}");
+    assert!(!stderr.contains("10-good.morva:"));
+    let (excerpt, marker) = diagnostic_content(&stderr, 3);
+    assert_eq!(excerpt, "  /* outer");
+    assert_eq!(marker, "  ^^");
+}
+
+#[test]
+fn token_split_comment_cli_diagnostic_marks_the_triggering_opener() {
+    let source = b"system Sh/**//**/op {}\n";
+    let path = temporary_model("split-token-comment", source);
+    let output = morva(&["check", path.to_str().unwrap()]);
+    fs::remove_file(path).unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    let stderr = text(&output.stderr);
+    assert!(stderr.contains("error[MORVA1025]: comment cannot split a token"));
+    assert!(stderr.contains(":1:10"), "{stderr}");
+    let (excerpt, marker) = diagnostic_content(&stderr, 1);
+    assert_eq!(excerpt, "system Sh/**//**/op {}");
+    assert_eq!(marker, "         ^^");
 }

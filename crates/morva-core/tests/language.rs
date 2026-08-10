@@ -132,6 +132,207 @@ fn line_comments_stop_before_every_supported_newline_sequence() {
 }
 
 #[test]
+fn block_comments_between_tokens_do_not_change_the_ast() {
+    let commented = "system /* system name follows */ Shop { entity Order { status: /* field type */ Boolean } }";
+    let document = parse(commented).unwrap();
+    assert!(check(&document).is_empty());
+    let Declaration::System(system) = &document.declarations[0] else {
+        panic!("system")
+    };
+    let Declaration::Entity(entity) = &system.declarations[0] else {
+        panic!("entity")
+    };
+    assert_eq!(system.name.text, "Shop");
+    assert_eq!(entity.name.text, "Order");
+    assert_eq!(entity.fields[0].name.text, "status");
+    assert_eq!(entity.fields[0].type_name.text, "Boolean");
+}
+
+#[test]
+fn block_comments_nest_and_keep_comment_modes_isolated() {
+    let source = r#"/* outer // stays block
+   /* inner */ outer */
+system Shop { // line mode treats /* as text
+  entity Order { active: Boolean }
+}
+"#;
+    let document = parse(source).expect("nested and mode-isolated comments parse");
+    assert!(check(&document).is_empty());
+}
+
+#[test]
+fn block_comment_newlines_separate_syntax_and_preserve_original_byte_spans() {
+    for newline in ["\n", "\r\n", "\r"] {
+        let source = format!(
+            "system Shop {{{newline}  enum State {{{newline}    Ready/* note{newline}still note */Done{newline}  }}{newline}}}{newline}"
+        );
+        let document = parse(&source).expect("comment newline separates enum members");
+        let Declaration::System(system) = &document.declarations[0] else {
+            panic!("system")
+        };
+        let Declaration::Enum(enumeration) = &system.declarations[0] else {
+            panic!("enum")
+        };
+        assert_eq!(
+            enumeration
+                .members
+                .iter()
+                .map(|member| member.text.as_str())
+                .collect::<Vec<_>>(),
+            ["Ready", "Done"]
+        );
+        let done = source.find("Done").unwrap();
+        assert_eq!(enumeration.members[1].span.start, done);
+        assert_eq!(enumeration.members[1].span.end, done + 4);
+    }
+}
+
+#[test]
+fn unterminated_nested_block_comment_reports_only_the_outer_opener() {
+    let source = "system Shop {\r\n  /* outer\n     /* inner still open";
+    let diagnostics = parse(source).unwrap_err();
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code, "MORVA1024");
+    assert_eq!(diagnostics[0].message, "unterminated block comment");
+    let start = source.find("/* outer").unwrap();
+    assert_eq!(diagnostics[0].span.start, start);
+    assert_eq!(diagnostics[0].span.end, start + 2);
+}
+
+#[test]
+fn mixed_newlines_inside_block_comments_keep_following_diagnostic_spans_original() {
+    let source =
+        "system Shop {/* first\nsecond\r\nthird\rfour */\n  entity Item { active Boolean }\n}";
+    let diagnostics = parse(source).unwrap_err();
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code, "MORVA1006");
+    let boolean = source.find("Boolean").unwrap();
+    assert_eq!(diagnostics[0].span.start, boolean);
+    assert_eq!(diagnostics[0].span.end, boolean + "Boolean".len());
+}
+
+#[test]
+fn comments_cannot_split_an_identifier_token() {
+    let source = "system Shop { entity Or/* no */der {} }";
+    let diagnostics = parse(source).unwrap_err();
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code, "MORVA1025");
+    assert_eq!(diagnostics[0].message, "comment cannot split a token");
+    let opener = source.find("/*").unwrap();
+    assert_eq!(diagnostics[0].span.start, opener);
+    assert_eq!(diagnostics[0].span.end, opener + 2);
+}
+
+#[test]
+fn token_split_comments_are_rejected_in_skipped_and_consecutive_content() {
+    for source in [
+        "system Sh/**//**/op {}",
+        "system Shop { action Save { implementation_hint { storage: rela/**/tional } } }",
+        "system Shop { action Save { timeout 1/**/0 } }",
+        "system Shop { module Compat { custom Or/**/der } }",
+    ] {
+        let diagnostics = parse(source).unwrap_err();
+        assert_eq!(diagnostics.len(), 1, "{source}");
+        assert_eq!(diagnostics[0].code, "MORVA1025", "{source}");
+        assert_eq!(diagnostics[0].message, "comment cannot split a token");
+        let opener = source.find("/*").unwrap();
+        assert_eq!(
+            diagnostics[0].span,
+            morva_core::Span {
+                start: opener,
+                end: opener + 2
+            }
+        );
+    }
+}
+
+#[test]
+fn comments_cannot_split_existing_compound_operators() {
+    for (operator, clause) in [
+        ("=/**/=", "requires item.count =/**/= 0"),
+        ("!/**/=", "requires item.count !/**/= 0"),
+        (">/**/=", "requires item.count >/**/= 0"),
+        ("</**/=", "requires item.count </**/= 0"),
+        ("+/**/=", "effects item.count +/**/= 1"),
+        ("-/**/=", "effects item.count -/**/= 1"),
+    ] {
+        let source = format!(
+            "system Test {{ entity Item {{ count: Integer }} action Check(item: Item) {{ {clause} }} }}"
+        );
+        let diagnostics = parse(&source).unwrap_err();
+        assert_eq!(diagnostics.len(), 1, "{operator}");
+        assert_eq!(diagnostics[0].code, "MORVA1025", "{operator}");
+        assert_eq!(diagnostics[0].message, "comment cannot split a token");
+        let opener = source.find("/**/").unwrap();
+        assert_eq!(
+            diagnostics[0].span,
+            morva_core::Span {
+                start: opener,
+                end: opener + 2,
+            },
+            "{operator}"
+        );
+    }
+}
+
+#[test]
+fn compound_operator_split_guard_covers_skipped_and_consecutive_comments() {
+    for split_operator in [
+        "=/**/=",
+        "!/**/=",
+        ">/**/=",
+        "</**/=",
+        "+/**/=",
+        "-/**/=",
+        "=/**//**/=",
+    ] {
+        let source = format!(
+            "system Shop {{ action Save {{ implementation_hint {{ operator: {split_operator} }} }} }}"
+        );
+        let diagnostics = parse(&source).unwrap_err();
+        assert_eq!(diagnostics.len(), 1, "{split_operator}");
+        assert_eq!(diagnostics[0].code, "MORVA1025", "{split_operator}");
+        assert_eq!(diagnostics[0].message, "comment cannot split a token");
+        let opener = source.find("/*").unwrap();
+        assert_eq!(
+            diagnostics[0].span,
+            morva_core::Span {
+                start: opener,
+                end: opener + 2,
+            },
+            "{split_operator}"
+        );
+    }
+}
+
+#[test]
+fn newline_inside_operator_comment_is_a_separator_not_a_token_split() {
+    let skipped = "system Shop { action Save { implementation_hint { operator: =/* note\n*/= } } }";
+    assert!(parse(skipped).is_ok());
+
+    let typed = "system Test { entity Item { count: Integer } action Check(item: Item) { requires item.count =/* note\n*/= 0 } }";
+    let diagnostics = parse(typed).unwrap_err();
+    assert!(
+        diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code != "MORVA1025")
+    );
+}
+
+#[test]
+fn newline_comments_and_non_joining_boundaries_do_not_report_token_splits() {
+    let source = "system Shop { action Save { implementation_hint { storage: rela/* note\n*/tional count: 1/**/value } } }";
+    let document = parse(source).expect("comment boundaries do not form one existing token");
+    assert!(check(&document).is_empty());
+}
+
+#[test]
+fn line_comment_at_eof_remains_valid() {
+    let document = parse("system Shop {} // trailing comment at EOF").unwrap();
+    assert!(check(&document).is_empty());
+}
+
+#[test]
 fn equivalent_newline_sequences_keep_model_shape_and_original_byte_spans() {
     for newline in ["\n", "\r\n", "\r"] {
         let source = [

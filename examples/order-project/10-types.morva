@@ -1,3 +1,4 @@
+/* Shared domain types for the order project. */
 system Shop {
   enum OrderStatus {
     Pending

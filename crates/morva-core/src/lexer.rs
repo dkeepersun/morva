@@ -41,6 +41,39 @@ pub(crate) fn lex(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
                     cursor += 1;
                 }
             }
+            b'/' if bytes.get(cursor + 1) == Some(&b'*') => {
+                let split_left = tokens.last().and_then(|previous| {
+                    (previous.span.end == start).then_some(match &previous.kind {
+                        TokenKind::Identifier(_) => SplitLeft::Identifier,
+                        TokenKind::Integer(_) => SplitLeft::Integer,
+                        TokenKind::Symbol('=' | '!' | '>' | '<' | '+' | '-') => {
+                            SplitLeft::CompoundOperator
+                        }
+                        _ => SplitLeft::Other,
+                    })
+                });
+                let (end, has_newline) = scan_block_comment_run(bytes, start, &mut tokens)?;
+                if !has_newline
+                    && bytes.get(end).is_some_and(|right| {
+                        matches!(split_left, Some(SplitLeft::Identifier))
+                            && (right.is_ascii_alphanumeric() || *right == b'_')
+                            || matches!(split_left, Some(SplitLeft::Integer))
+                                && right.is_ascii_digit()
+                            || matches!(split_left, Some(SplitLeft::CompoundOperator))
+                                && *right == b'='
+                    })
+                {
+                    return Err(vec![Diagnostic::new(
+                        "MORVA1025",
+                        "comment cannot split a token",
+                        Span {
+                            start,
+                            end: start + 2,
+                        },
+                    )]);
+                }
+                cursor = end;
+            }
             byte if byte.is_ascii_alphabetic() || byte == b'_' => {
                 cursor += 1;
                 while cursor < bytes.len()
@@ -120,6 +153,63 @@ pub(crate) fn lex(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
     }
     tokens.push(token(TokenKind::Eof, source.len(), source.len()));
     Ok(tokens)
+}
+
+#[derive(Clone, Copy)]
+enum SplitLeft {
+    Identifier,
+    Integer,
+    CompoundOperator,
+    Other,
+}
+
+fn scan_block_comment_run(
+    bytes: &[u8],
+    start: usize,
+    tokens: &mut Vec<Token>,
+) -> Result<(usize, bool), Vec<Diagnostic>> {
+    let mut cursor = start;
+    let mut has_newline = false;
+    while matches!(&bytes[cursor..], [b'/', b'*', ..]) {
+        let outer_start = cursor;
+        cursor += 2;
+        let mut depth = 1usize;
+        while cursor < bytes.len() && depth > 0 {
+            if matches!(&bytes[cursor..], [b'/', b'*', ..]) {
+                depth += 1;
+                cursor += 2;
+            } else if matches!(&bytes[cursor..], [b'*', b'/', ..]) {
+                depth -= 1;
+                cursor += 2;
+            } else if bytes[cursor] == b'\r' {
+                let newline_start = cursor;
+                cursor += 1;
+                if bytes.get(cursor) == Some(&b'\n') {
+                    cursor += 1;
+                }
+                tokens.push(token(TokenKind::Newline, newline_start, cursor));
+                has_newline = true;
+            } else if bytes[cursor] == b'\n' {
+                let newline_start = cursor;
+                cursor += 1;
+                tokens.push(token(TokenKind::Newline, newline_start, cursor));
+                has_newline = true;
+            } else {
+                cursor += 1;
+            }
+        }
+        if depth > 0 {
+            return Err(vec![Diagnostic::new(
+                "MORVA1024",
+                "unterminated block comment",
+                Span {
+                    start: outer_start,
+                    end: outer_start + 2,
+                },
+            )]);
+        }
+    }
+    Ok((cursor, has_newline))
 }
 
 fn token(kind: TokenKind, start: usize, end: usize) -> Token {

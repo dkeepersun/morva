@@ -1,3 +1,6 @@
+/* Transition rationale.
+   /* Nested review note: the action remains single-step. */
+*/
 system Shop {
   action Confirm(order: Order) {
     idempotent by order.id

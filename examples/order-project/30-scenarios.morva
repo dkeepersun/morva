@@ -1,3 +1,4 @@
+/* Executable acceptance scenario. */
 system Shop {
   scenario NormalConfirmation {
     given order.status = Pending

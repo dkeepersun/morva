@@ -58,7 +58,9 @@ grill / challenge / review（规划中）
 - CLI 输入可为单文件或项目目录。目录只装配直接子级中小写 `.morva` 普通文件；忽略其他文件、子目录和 symlink，候选文件名必须是有效 UTF-8 并按其字节序排序。每个候选文件必须独立解析并恰有一个同名顶层 `system`，装配只合并 system 子声明。
 - 多文件项目沿用全局短名语义，不引入 import、module scope、递归目录或跨项目依赖；诊断与模拟失败必须回映到责任文件的本地 span 和行列。
 - 标识符当前只支持 ASCII。
-- LF、CRLF、CR 各表示一个逻辑换行；CRLF 只产生一个换行 token，`//` 注释在任一换行前结束，span 保留原文件 byte offset。
+- LF、CRLF、CR 各表示一个逻辑换行；CRLF 只产生一个换行 token，span 保留原文件 byte offset。
+- `//` 行注释在任一逻辑换行或 EOF 前结束；`/* ... */` 块注释可在 token 之间跨行并嵌套。块内每个 LF、CRLF、CR 仍产生一个逻辑换行；注释正文不进入 AST 或语义。这里的等价是把非换行注释正文视为空白、保留内部逻辑换行，不是无条件删除全部注释 byte。
+- 无换行块注释不得切分一个现有 identifier、Integer 或复合 operator token（`==`、`!=`、`>=`、`<=`、`+=`、`-=`），包括 compatibility、soft behavior 和 implementation hint 等 parser 跳过区；违反时以 `MORVA1025` 标记触发的 `/*` 两个 byte。未闭合块注释以 `MORVA1024` 精确标记最外层 `/*` 两个 byte。
 
 ### FR-02 强类型核心模型
 

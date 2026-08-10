@@ -12,6 +12,7 @@ The current v0.1 scope is intentionally small:
 
 - strongly typed `system`, `entity`, `enum`, `action`, and `scenario` syntax models;
 - fields, parameters, enum members, and `requires`, `effects`, `ensures`, and `invariant` clauses;
+- `//` line comments and nested `/* ... */` block comments whose newlines still separate syntax;
 - duplicate-name, type, field-path, enum-member, effect-target, canonical expression type, comparison, and effect-value checks;
 - deterministic `check`, `parse`, and `inspect` commands with source diagnostics;
 - file-or-directory input, so one system can be split across independently maintained `.morva` files;
@@ -54,6 +55,9 @@ cargo run -p morva-cli -- simulate examples/order-project NormalConfirmation
 Example:
 
 ```morva
+/* Reviewable design rationale can span lines.
+   /* Nested details are supported. */
+*/
 system Shop {
   module Orders {
     entity Order {

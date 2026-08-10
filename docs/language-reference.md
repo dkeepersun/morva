@@ -7,7 +7,10 @@
 - 单文件输入不强制检查后缀。目录输入只选择直接子级中扩展名精确为小写 `.morva` 的普通文件，忽略其他文件、子目录和 symlink，并按 UTF-8 文件名字节序装配。
 - 标识符：ASCII 字母或 `_` 开头，后续可含 ASCII 数字。
 - LF、CRLF、CR 各表示一个逻辑换行；CRLF 虽占两个 byte，但只作为一个分隔符。混合使用时也按每个序列一行计数，源码 span 不经过换行规范化。
-- 注释：`//` 到任一受支持换行之前。
+- 行注释：`//` 到任一受支持换行或 EOF 之前。
+- 块注释：`/* ... */`，可跨行并嵌套，例如 `/* outer /* inner */ outer */`。块内的 LF、CRLF、CR 仍作为语法分隔换行，CRLF 不双计；注释正文不进入 AST。所谓与空白模型等价，是把非换行正文替换为空白并保留这些内部逻辑换行，不是无条件删除整个注释。
+- 注释只能出现在 token 之间，不能把 identifier 写成 `Or/*...*/der`、把 Integer 写成 `1/*...*/0`，也不能把现有复合 operator `==`、`!=`、`>=`、`<=`、`+=`、`-=` 写成由无换行注释隔开的两部分；连续无换行块注释同样不能绕过。该规则在 parser 会跳过的 compatibility、soft behavior 和 implementation hint 内容中同样生效；失败报告 `MORVA1025: comment cannot split a token` 并标记触发的 `/*` 两个 byte。块内有逻辑换行或两侧本来不会形成同一个现有 token 时不报此错，而是保留该换行的语法分隔作用。
+- 未闭合块注释报告 `MORVA1024`，span 是最外层 `/*` 的两个原始 byte；嵌套层也未闭合时仍只指向最外层 opener。
 - 语句主要以逻辑换行分隔；部分位置允许 `;`。
 - Integer 字面量必须在非负 `i64` 范围（`0..=i64::MAX`）内；当前没有一元负数字面量。
 - Boolean 字面量为 `true`、`false`。
@@ -19,6 +22,15 @@
 system Shop {
   // declarations
 }
+```
+
+较长的人工评审说明可以使用块注释：
+
+```morva
+/* Why this transition exists.
+   /* Nested detail stays inside the outer comment. */
+*/
+system Shop { /* declarations */ }
 ```
 
 必须恰好有一个顶层 `system`。system 内可以嵌套声明；任何嵌套 system 都是错误。

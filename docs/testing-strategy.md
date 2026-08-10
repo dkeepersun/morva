@@ -47,6 +47,8 @@ cargo run -p morva-cli -- simulate examples/order-project NormalConfirmation
 
 换行契约必须通过公开 core parse/check 和真实 CLI 进程分别覆盖：等价 LF/CRLF/CR 模型、原源 byte span、三种注释终止、混合序列、CRLF 单计数，以及换行后 EOF 的行列、空 excerpt 和 caret。
 
+注释契约必须覆盖：`//` 的显式 EOF/三种换行终止、token 间块注释、跨行与嵌套块、行/块模式隔离、块内 LF/CRLF/CR Newline、混合换行后的原始 byte span；typed 和 parser-skipped 内容中的 identifier、Integer 及六种复合 operator 切分、连续 comment run、不会合并 token 或含换行的反例必须验证 `MORVA1025` code/message/span。outer/inner 均未闭合时只返回 `MORVA1024`，单/多文件 CLI 都须精确标记责任文件的最外层 `/*` 两个 byte。四命令测试还应比较注释模型与“正文为空白、内部换行保留”模型的 parse/inspect 输出及七阶段模拟最终状态，而非只断言 success。
+
 可执行语义还必须覆盖：成功、每个失败阶段、未初始化状态、顺序性、溢出/边界值、类型不匹配和失败后的状态报告。
 
 ## 4. 回归原则
