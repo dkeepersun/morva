@@ -1,0 +1,108 @@
+# generated: 2026-08-10
+# last_updated: 2026-08-10
+# project: Morva
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog -> in-progress: Automatically when first story is created
+#   - in-progress -> done: Manually when all stories reach done
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but is not required
+#   - done: Retrospective has been completed
+#
+# Action Item Status:
+#   - open: Committed but not yet addressed
+#   - in-progress: Actively being worked on
+#   - done: Completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to in-progress when its first story is created.
+# - Stories are sequential by default but may run in parallel when independent.
+# - Stories move through review before done.
+# - Retrospectives may append or update action_items.
+
+generated: 2026-08-10
+last_updated: 2026-08-10
+project: Morva
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  epic-1: done
+  1-1-编写并检查强类型业务模型: done
+  1-2-查看并模拟单操作业务契约: done
+  1-3-获得安全且精确的源码诊断: done
+  1-4-按文件组织同一系统模型: done
+  epic-1-retrospective: optional
+
+  epic-2: backlog
+  2-1-识别已解析但未验证的兼容容器: backlog
+  2-2-识别未执行的-action-soft-behavior: backlog
+  2-3-在-inspect-中查看未建模内容: backlog
+  2-4-查询-morva-的权威能力清单: backlog
+  epic-2-retrospective: optional
+
+  epic-3: backlog
+  3-1-分组并取反-boolean-谓词: backlog
+  3-2-使用析取表达替代业务条件: backlog
+  3-3-保守分析嵌套-boolean-矛盾: backlog
+  epic-3-retrospective: optional
+
+  epic-4: backlog
+  4-1-机器读取-check-结果与诊断: backlog
+  4-2-机器读取结构化-ast: backlog
+  4-3-机器读取语义摘要与能力清单: backlog
+  4-4-机器读取七阶段模拟报告: backlog
+  epic-4-retrospective: optional
+
+  epic-5: backlog
+  5-1-发现-morva-mcp-服务与能力边界: backlog
+  5-2-让-ai-检查内存中的-morva-项目: backlog
+  5-3-让-ai-解析并审视内存模型: backlog
+  5-4-让-ai-只读模拟业务场景: backlog
+  epic-5-retrospective: optional
+
+action_items:
+  - epic: 2
+    action: "修正文档中 CI、托管运行与完成状态的事实漂移"
+    owner: "alex"
+    status: open
+  - epic: 2
+    action: "事实审查并冻结语言演进策略，移除未经证明的 SAT、复杂度和覆盖率结论"
+    owner: "alex"
+    status: open
+  - epic: 2
+    action: "基于实际构建证据定义 Rust 工具链固定与 MSRV 策略"
+    owner: "alex"
+    status: open
+  - epic: 2
+    action: "在远程仓库启用并验证 main branch protection 与必需质量门禁"
+    owner: "alex"
+    status: open
+  - epic: 2
+    action: "建立非墙钟硬比率的 NFR-04 可重复规模与趋势证据"
+    owner: "alex"
+    status: open
+  - epic: 2
+    action: "推送本地 multi-file/comments 提交并验证新的 hosted Test Pipeline 运行"
+    owner: "alex"
+    status: open
