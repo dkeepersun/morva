@@ -1,4 +1,7 @@
-use crate::{Declaration, Diagnostic, Document, RebaseSpans, Span, System, check, parse};
+use crate::{
+    Declaration, Diagnostic, Document, Notice, RebaseSpans, Span, System,
+    analyze as analyze_document, check, parse,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SourceId(pub usize);
@@ -19,6 +22,66 @@ pub enum ProjectDiagnostic {
         source_id: SourceId,
         local_diagnostic: Diagnostic,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectNotice {
+    pub source_id: SourceId,
+    pub local_notice: Notice,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectAnalysisReport {
+    pub errors: Vec<ProjectDiagnostic>,
+    pub notices: Vec<ProjectNotice>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectFinding<'a> {
+    Error(&'a ProjectDiagnostic),
+    Notice(&'a ProjectNotice),
+}
+
+impl ProjectAnalysisReport {
+    pub fn has_errors(&self) -> bool {
+        !self.errors.is_empty()
+    }
+
+    pub fn findings(&self) -> Vec<ProjectFinding<'_>> {
+        let mut findings = self
+            .errors
+            .iter()
+            .map(ProjectFinding::Error)
+            .chain(self.notices.iter().map(ProjectFinding::Notice))
+            .collect::<Vec<_>>();
+        findings.sort_by_key(|finding| match finding {
+            ProjectFinding::Error(ProjectDiagnostic::Project { diagnostic }) => (
+                0usize,
+                0usize,
+                diagnostic.span.start,
+                diagnostic.span.end,
+                0u8,
+            ),
+            ProjectFinding::Error(ProjectDiagnostic::Source {
+                source_id,
+                local_diagnostic,
+            }) => (
+                1,
+                source_id.0,
+                local_diagnostic.span.start,
+                local_diagnostic.span.end,
+                0,
+            ),
+            ProjectFinding::Notice(notice) => (
+                1,
+                notice.source_id.0,
+                notice.local_notice.span.start,
+                notice.local_notice.span.end,
+                1,
+            ),
+        });
+        findings
+    }
 }
 
 impl ProjectDiagnostic {
@@ -251,6 +314,45 @@ impl Project {
                 }
             })
             .collect()
+    }
+
+    pub fn analyze(&self) -> ProjectAnalysisReport {
+        let report = analyze_document(&self.document);
+        let errors = report
+            .errors
+            .into_iter()
+            .map(|diagnostic| {
+                let location = self
+                    .source_map
+                    .locate_virtual_span(diagnostic.span)
+                    .expect("all project diagnostics originate from a project source");
+                ProjectDiagnostic::Source {
+                    source_id: location.source_id,
+                    local_diagnostic: Diagnostic {
+                        span: location.local_span,
+                        ..diagnostic
+                    },
+                }
+            })
+            .collect();
+        let notices = report
+            .notices
+            .into_iter()
+            .map(|notice| {
+                let location = self
+                    .source_map
+                    .locate_virtual_span(notice.span)
+                    .expect("all project notices originate from a project source");
+                ProjectNotice {
+                    source_id: location.source_id,
+                    local_notice: Notice {
+                        span: location.local_span,
+                        ..notice
+                    },
+                }
+            })
+            .collect();
+        ProjectAnalysisReport { errors, notices }
     }
 
     /// Maps a span from the merged `document()` virtual offset space to a local source span.

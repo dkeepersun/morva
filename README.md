@@ -18,6 +18,7 @@ The current v0.1 scope is intentionally small:
 - file-or-directory input, so one system can be split across independently maintained `.morva` files;
 - pure in-memory simulation for one-action scenarios using enum, Boolean, and Integer state;
 - compatibility parsing for broader declarations and documented soft behavior already used by the example.
+- explicit non-fatal `check` warnings when compatibility containers are parsed without container-specific semantic validation.
 
 Formal verification, code generation, infrastructure configuration, and a large keyword taxonomy are explicitly out of scope for v0.1.
 
@@ -33,6 +34,10 @@ cargo run -p morva-cli -- simulate examples/order.morva NormalConfirmation
 All four commands parse and semantically check the model first. `parse` prints the
 currently modeled AST surface; compatibility-only text that the parser deliberately
 ignores is not reproduced.
+
+`check` reports compatibility containers as `MORVA5001` warnings on stderr while
+remaining successful when no semantic errors exist. The bundled single-file example
+therefore warns for its `module Orders` wrapper; this does not change its semantics.
 
 Each command also accepts a directory. A project directory contains direct-child,
 lowercase `.morva` regular files, each with the same `system` wrapper. Morva sorts

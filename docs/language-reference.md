@@ -151,6 +151,8 @@ module service event flow lifecycle policy
 
 兼容容器保留名称、span 和嵌套声明；其其他内容可能被跳过，不参与专有语义检查或模拟。因此“能解析”不等于“已支持”。
 
+显式 analysis 和 CLI `check` 会为每个兼容容器报告 `MORVA5001` warning，指向容器名称并说明其未被专有语义验证。warning 不改变旧 `check()` error API、模拟语义或成功退出码；被跳过的正文仍不会回显或进入求值。
+
 ## 6. 软行为与实现提示
 
 Action 中可出现：

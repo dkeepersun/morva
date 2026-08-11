@@ -73,6 +73,7 @@ grill / challenge / review（规划中）
 ### FR-03 解析兼容边界
 
 - `module`、`service`、`event`、`flow`、`lifecycle`、`policy` 当前仅是兼容容器，不承诺内部语义。
+- 每个兼容容器在显式分析和 CLI `check` 中产生 `MORVA5xxx` 非致命 warning；旧 error-only `check()` API 与 simulator 不把 warning 当失败。
 - action 中仅 `atomic`、`idempotent`、`timeout`、`retry`、`implementation_hint` 可作为白名单软项被忽略。
 - 未知 action 项必须报错，不能静默吞掉拼写错误。
 
@@ -91,6 +92,7 @@ grill / challenge / review（规划中）
 ### FR-05 诊断
 
 - 语法、语义和模拟选择错误使用稳定的 `MORVA1xxx`、`MORVA2xxx/3xxx`、`MORVA4xxx` 代码空间。
+- 非致命语义覆盖提示使用稳定的 `MORVA5xxx` warning 空间；warning-only 检查成功退出 0。
 - CLI 诊断包含代码、消息、行列和源码标记。
 - tab、控制字节和文件路径必须安全显示，不能污染终端输出。
 - 每条源码 excerpt 和 marker 的显示内容分别不超过 160 个渲染字符；窗口必须保留错误起点和至少一个 caret，裁剪不得切断转义片段。

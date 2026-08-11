@@ -43,6 +43,8 @@ cargo run -p morva-cli -- simulate examples/order-project NormalConfirmation
 4. CLI 映射到正确退出码并安全渲染输入。
 5. 与已有示例和兼容边界不冲突。
 
+非致命分析 warning 还必须覆盖：六类兼容容器的 exact code/message/category/name span、warning 与 semantic error 分离、旧 `check()` parity、多文件本地映射，以及真实 CLI 的 warning-only exit 0 与 mixed exit 1。
+
 诊断呈现变更还必须通过真实 CLI 进程覆盖：超长行的起点/中间/末尾/EOF、159/160/161 渲染宽度、左上下文 72/73 宽度、长或跨行 span、tab/control/non-ASCII 转义片段、模拟失败，以及成功/读取失败/模型失败/运行时失败中的 UTF-8 路径控制字符。源码 excerpt 和 marker 的 160 字符上限应分别断言；这不等同于总 stderr 上限。
 
 换行契约必须通过公开 core parse/check 和真实 CLI 进程分别覆盖：等价 LF/CRLF/CR 模型、原源 byte span、三种注释终止、混合序列、CRLF 单计数，以及换行后 EOF 的行列、空 excerpt 和 caret。

@@ -1,4 +1,6 @@
-use morva_core::{ClauseExpression, ClauseKind, Declaration, check, parse};
+use morva_core::{
+    AnalysisFinding, ClauseExpression, ClauseKind, Declaration, NoticeKind, analyze, check, parse,
+};
 
 const COMPLETE_MODEL: &str = r#"system Wallet {
   enum AccountState {
@@ -31,9 +33,84 @@ fn codes(source: &str) -> Vec<&'static str> {
 }
 
 #[test]
+fn compatibility_containers_are_non_fatal_structured_notices() {
+    let source = r#"system Shop {
+  module Modules {
+    service Services {
+      event Events {
+        flow Flows {
+          lifecycle Lifecycles {
+            policy Policies {
+              compatibility_only content
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"#;
+    let document = parse(source).expect("compatibility containers parse");
+    let report = analyze(&document);
+    assert!(report.errors.is_empty());
+    assert_eq!(report.notices.len(), 6);
+    assert!(check(&document).is_empty());
+    for (notice, (kind, name)) in report.notices.iter().zip([
+        ("module", "Modules"),
+        ("service", "Services"),
+        ("event", "Events"),
+        ("flow", "Flows"),
+        ("lifecycle", "Lifecycles"),
+        ("policy", "Policies"),
+    ]) {
+        assert_eq!(notice.code, "MORVA5001");
+        assert_eq!(
+            notice.message,
+            format!("compatibility {kind} '{name}' is parsed but not semantically validated")
+        );
+        assert_eq!(
+            notice.span.start,
+            source.find(name).expect("container name span")
+        );
+        assert_eq!(notice.span.end - notice.span.start, name.len());
+        assert_eq!(
+            notice.kind,
+            NoticeKind::CompatibilityContainer {
+                kind: kind.to_owned(),
+                name: name.to_owned(),
+            }
+        );
+    }
+}
+
+#[test]
+fn analysis_keeps_compatibility_notices_separate_from_semantic_errors() {
+    let document =
+        parse("system Shop {\n  module Orders {}\n  entity Item { value: Missing }\n}\n")
+            .expect("syntax remains valid");
+    let report = analyze(&document);
+    assert_eq!(report.notices.len(), 1);
+    assert_eq!(report.errors, check(&document));
+    assert_eq!(report.errors[0].code, "MORVA2007");
+
+    let duplicate = parse("system Shop {\n  module Orders {}\n  module Orders {}\n}\n")
+        .expect("duplicate container names remain syntactically valid");
+    let duplicate_report = analyze(&duplicate);
+    assert!(matches!(
+        duplicate_report.findings().as_slice(),
+        [
+            AnalysisFinding::Notice(_),
+            AnalysisFinding::Error(_),
+            AnalysisFinding::Notice(_)
+        ]
+    ));
+}
+
+#[test]
 fn parses_the_complete_strongly_typed_core() {
     let document = parse(COMPLETE_MODEL).expect("valid model");
     assert!(check(&document).is_empty());
+    assert!(analyze(&document).notices.is_empty());
     let Declaration::System(system) = &document.declarations[0] else {
         panic!("expected system");
     };

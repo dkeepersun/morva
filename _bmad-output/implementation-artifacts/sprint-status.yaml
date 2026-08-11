@@ -40,7 +40,7 @@
 # - Retrospectives may append or update action_items.
 
 generated: 2026-08-10
-last_updated: 2026-08-10
+last_updated: 2026-08-11
 project: Morva
 project_key: NOKEY
 tracking_system: file-system
@@ -55,7 +55,7 @@ development_status:
   epic-1-retrospective: optional
 
   epic-2: in-progress
-  2-1-识别已解析但未验证的兼容容器: ready-for-dev
+  2-1-识别已解析但未验证的兼容容器: done
   2-2-识别未执行的-action-soft-behavior: backlog
   2-3-在-inspect-中查看未建模内容: backlog
   2-4-查询-morva-的权威能力清单: backlog

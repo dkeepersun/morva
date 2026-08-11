@@ -39,6 +39,7 @@ presentation     language semantics
 - `parse(&str) -> Result<Document, Vec<Diagnostic>>`
 - `Project::parse(sources) -> Result<Project, Vec<ProjectDiagnostic>>`
 - `check(&Document) -> Vec<Diagnostic>`
+- `analyze(&Document) -> AnalysisReport`（additive errors + non-fatal notices）
 - `simulate(&Document, &str) -> Result<SimulationReport, Diagnostic>`
 - AST、diagnostic 和 simulation report 类型
 
@@ -99,6 +100,7 @@ presentation     language semantics
 - Semantic checker 累积可独立发现的诊断。
 - Simulator 的静态选择错误返回 `Diagnostic`；执行期失败写入 `SimulationReport.failure`。
 - CLI 把语言/模拟失败映射到退出码 1，把用法/文件 IO 映射到 2。
+- `check()` 和 simulator 保持 error-only；additive analysis report 承载兼容容器 warning，CLI `check` 只在存在 error 时退出 1。
 - 不可信输入不得触发 panic；测试覆盖字符、溢出、未初始化和无效结构等边界。
 - CLI 对项目候选执行 symlink metadata、canonical root、打开文件句柄及打开前后文件身份校验，读取绑定到已验证句柄。纯标准库没有跨平台原子 `nofollow` open；Unix 使用 device/inode 强身份，其他平台退化为 length/modified 校验。并发原地改写同一 inode 的内容仍不提供快照隔离，这是无 watch/增量承诺下保留的 TOCTOU 残余。
 

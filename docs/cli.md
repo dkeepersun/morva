@@ -16,6 +16,11 @@ morva help          Show concise usage
 producing success output. `parse` prints the typed AST surface that Morva currently
 models; it does not reproduce ignored compatibility-only text.
 
+`check` emits `warning[MORVA5001]` for each compatibility container. Warnings use
+the same safe path/excerpt renderer, remain on stderr, and do not change success
+exit `0`; only errors suppress the `ok:` line and exit `1`. Other commands do not
+gain warning output in this increment.
+
 A directory is a flat Morva project. Discovery includes only direct-child regular
 files whose extension is exactly lowercase `.morva`, ignores other files,
 subdirectories, and symlinks, and sorts candidates by filename bytes. Every file

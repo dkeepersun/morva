@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use morva_core::{
-    Action, AssignmentOperator, BinaryOperator, ClauseExpression, Declaration, Diagnostic,
-    Document, Entity, Enum, Expr, ExprKind, Project, ProjectDiagnostic, Scenario, ScenarioItem,
-    SimulationReport, Span, check, parse, simulate,
+    Action, AnalysisFinding, AssignmentOperator, BinaryOperator, ClauseExpression, Declaration,
+    Diagnostic, Document, Entity, Enum, Expr, ExprKind, Project, ProjectDiagnostic, ProjectFinding,
+    Scenario, ScenarioItem, SimulationReport, Span, analyze, check, parse, simulate,
 };
 
 const MAX_DIAGNOSTIC_WIDTH: usize = 160;
@@ -54,6 +54,9 @@ fn run_simulation(path: &str, scenario: &str) -> ExitCode {
 }
 
 fn run(command: &str, path: &str) -> ExitCode {
+    if command == "check" {
+        return run_check(path);
+    }
     let model = match load_checked_model(path) {
         Ok(model) => model,
         Err(code) => return code,
@@ -65,6 +68,31 @@ fn run(command: &str, path: &str) -> ExitCode {
         _ => println!("ok: {}", safe_path(path)),
     }
     ExitCode::SUCCESS
+}
+
+fn run_check(path: &str) -> ExitCode {
+    let model = match load_model(path) {
+        Ok(model) => model,
+        Err(code) => return code,
+    };
+    let has_errors = match &model {
+        LoadedModel::Single { source, document } => {
+            let report = analyze(document);
+            render_analysis(&source.path.to_string_lossy(), &source.source, &report);
+            report.has_errors()
+        }
+        LoadedModel::Project { sources, project } => {
+            let report = project.analyze();
+            render_project_analysis(sources, &report);
+            report.has_errors()
+        }
+    };
+    if has_errors {
+        ExitCode::FAILURE
+    } else {
+        println!("ok: {}", safe_path(path));
+        ExitCode::SUCCESS
+    }
 }
 
 struct CliSource {
@@ -166,6 +194,27 @@ impl LoadedModel {
 }
 
 fn load_checked_model(path: &str) -> Result<LoadedModel, ExitCode> {
+    let model = load_model(path)?;
+    match &model {
+        LoadedModel::Single { source, document } => {
+            let diagnostics = check(document);
+            if !diagnostics.is_empty() {
+                render_diagnostics(&source.path.to_string_lossy(), &source.source, &diagnostics);
+                return Err(ExitCode::FAILURE);
+            }
+        }
+        LoadedModel::Project { sources, project } => {
+            let diagnostics = project.check();
+            if !diagnostics.is_empty() {
+                render_project_diagnostics(sources, &diagnostics);
+                return Err(ExitCode::FAILURE);
+            }
+        }
+    }
+    Ok(model)
+}
+
+fn load_model(path: &str) -> Result<LoadedModel, ExitCode> {
     let path = Path::new(path);
     if path.is_dir() {
         load_project(path)
@@ -183,11 +232,6 @@ fn load_single(path: &Path) -> Result<LoadedModel, ExitCode> {
             return Err(ExitCode::FAILURE);
         }
     };
-    let diagnostics = check(&document);
-    if !diagnostics.is_empty() {
-        render_diagnostics(&path.to_string_lossy(), &source.source, &diagnostics);
-        return Err(ExitCode::FAILURE);
-    }
     Ok(LoadedModel::Single { source, document })
 }
 
@@ -214,11 +258,6 @@ fn load_project(root: &Path) -> Result<LoadedModel, ExitCode> {
             return Err(ExitCode::FAILURE);
         }
     };
-    let diagnostics = project.check();
-    if !diagnostics.is_empty() {
-        render_project_diagnostics(&sources, &diagnostics);
-        return Err(ExitCode::FAILURE);
-    }
     Ok(LoadedModel::Project { sources, project })
 }
 
@@ -408,16 +447,70 @@ fn render_project_diagnostics(sources: &[CliSource], diagnostics: &[ProjectDiagn
 
 fn render_diagnostics(path: &str, source: &str, diagnostics: &[Diagnostic]) {
     for diagnostic in diagnostics {
-        let view = source_view(source, diagnostic.span);
-        eprintln!("{diagnostic}");
-        eprintln!("  --> {}:{}:{}", safe_path(path), view.line, view.column);
-        eprintln!("   |");
-        eprintln!("{:>3} | {}", view.line, view.rendered);
-        eprintln!(
-            "   | {}{}",
-            " ".repeat(view.marker_start),
-            "^".repeat(view.marker_len)
-        );
+        render_source_finding(path, source, &diagnostic.to_string(), diagnostic.span);
+    }
+}
+
+fn render_source_finding(path: &str, source: &str, header: &str, span: Span) {
+    let view = source_view(source, span);
+    eprintln!("{header}");
+    eprintln!("  --> {}:{}:{}", safe_path(path), view.line, view.column);
+    eprintln!("   |");
+    eprintln!("{:>3} | {}", view.line, view.rendered);
+    eprintln!(
+        "   | {}{}",
+        " ".repeat(view.marker_start),
+        "^".repeat(view.marker_len)
+    );
+}
+
+fn render_analysis(path: &str, source: &str, report: &morva_core::AnalysisReport) {
+    for finding in report.findings() {
+        match finding {
+            AnalysisFinding::Error(error) => {
+                render_source_finding(path, source, &error.to_string(), error.span);
+            }
+            AnalysisFinding::Notice(notice) => render_source_finding(
+                path,
+                source,
+                &format!("warning[{}]: {}", notice.code, notice.message),
+                notice.span,
+            ),
+        }
+    }
+}
+
+fn render_project_analysis(sources: &[CliSource], report: &morva_core::ProjectAnalysisReport) {
+    for finding in report.findings() {
+        match finding {
+            ProjectFinding::Error(ProjectDiagnostic::Project { diagnostic }) => {
+                eprintln!("{diagnostic}");
+            }
+            ProjectFinding::Error(ProjectDiagnostic::Source {
+                source_id,
+                local_diagnostic,
+            }) => {
+                let source = &sources[source_id.0];
+                render_source_finding(
+                    &source.path.to_string_lossy(),
+                    &source.source,
+                    &local_diagnostic.to_string(),
+                    local_diagnostic.span,
+                );
+            }
+            ProjectFinding::Notice(notice) => {
+                let source = &sources[notice.source_id.0];
+                render_source_finding(
+                    &source.path.to_string_lossy(),
+                    &source.source,
+                    &format!(
+                        "warning[{}]: {}",
+                        notice.local_notice.code, notice.local_notice.message
+                    ),
+                    notice.local_notice.span,
+                );
+            }
+        }
     }
 }
 

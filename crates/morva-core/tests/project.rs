@@ -1,6 +1,6 @@
 use morva_core::{
-    Assignment, ClauseExpression, Declaration, Expr, ExprKind, Path, Project, ScenarioItem,
-    SimulationPhase, Span, check, parse, simulate,
+    Assignment, ClauseExpression, Declaration, Expr, ExprKind, Path, Project, ProjectFinding,
+    ScenarioItem, SimulationPhase, Span, check, parse, simulate,
 };
 
 fn project() -> Project {
@@ -37,6 +37,43 @@ fn assembles_cross_file_references_and_simulates_seven_phases() {
     assert!(report.succeeded());
     assert_eq!(report.phases.len(), 7);
     assert_eq!(report.phases[3].phase, SimulationPhase::Effects);
+}
+
+#[test]
+fn maps_compatibility_notices_to_the_responsible_project_source() {
+    let first = "system Shop {\n  module First {}\n}\n";
+    let second = "system Shop {\n  module Other {}\n  entity Item { value: Missing }\n}\n";
+    let project = Project::parse([
+        ("01-compat.morva", first),
+        ("02-compat-error.morva", second),
+    ])
+    .expect("assemble project");
+    let report = project.analyze();
+    assert_eq!(report.errors, project.check());
+    assert_eq!(report.errors[0].diagnostic().code, "MORVA2007");
+    assert_eq!(report.notices.len(), 2);
+    assert_eq!(report.notices[0].source_id.0, 0);
+    assert_eq!(report.notices[1].source_id.0, 1);
+    assert_eq!(
+        report.notices[0].local_notice.span.start,
+        first.find("First").unwrap()
+    );
+    assert_eq!(
+        report.notices[1].local_notice.span.start,
+        second.find("Other").unwrap()
+    );
+    assert_eq!(
+        report.notices[0].local_notice.span.start, report.notices[1].local_notice.span.start,
+        "equal local offsets must remain associated with distinct sources"
+    );
+    assert!(matches!(
+        report.findings().as_slice(),
+        [
+            ProjectFinding::Notice(_),
+            ProjectFinding::Notice(_),
+            ProjectFinding::Error(_)
+        ]
+    ));
 }
 
 #[test]

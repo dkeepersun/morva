@@ -82,6 +82,11 @@ fn check_parse_and_inspect_the_example() {
     let path = example.to_str().expect("UTF-8 path");
     let checked = morva(&["check", path]);
     assert!(checked.status.success(), "{}", text(&checked.stderr));
+    assert_eq!(text(&checked.stdout), format!("ok: {path}\n"));
+    assert_eq!(
+        text(&checked.stderr).matches("warning[MORVA5001]").count(),
+        1
+    );
 
     let parsed = morva(&["parse", path]);
     assert!(parsed.status.success(), "{}", text(&parsed.stderr));
@@ -113,6 +118,7 @@ fn syntax_and_semantic_errors_exit_one_with_stable_locations() {
     let stderr = text(&output.stderr);
     assert!(stderr.contains("error[MORVA1008]"));
     assert!(stderr.contains(":2:24"));
+    assert!(!stderr.contains("warning[MORVA5001]"));
 
     let semantic = temporary_model(
         "semantic",
@@ -437,7 +443,10 @@ fn long_line_simulation_failure_uses_the_bounded_diagnostic_window() {
 
 #[test]
 fn control_characters_in_utf8_paths_are_escaped_for_every_cli_result() {
-    let valid = temporary_model("path-\n\t\r\u{1b}\u{7f}-success", b"system Shop {}\n");
+    let valid = temporary_model(
+        "path-\n\t\r\u{1b}\u{7f}-success",
+        b"system Shop { module Orders {} }\n",
+    );
     let success = morva(&["check", valid.to_str().expect("UTF-8 path")]);
     fs::remove_file(valid).expect("remove fixture");
     assert!(success.status.success());
@@ -477,6 +486,7 @@ fn control_characters_in_utf8_paths_are_escaped_for_every_cli_result() {
 
     for output in [
         text(&success.stdout),
+        text(&success.stderr),
         text(&read_error.stderr),
         text(&simulation_read_error.stderr),
         text(&model_error.stderr),
@@ -957,7 +967,7 @@ fn unterminated_block_comment_cli_diagnostic_marks_the_outer_two_bytes() {
     let source = b"system Shop {\r\n  /* outer\n     /* inner still open";
     let path = temporary_model("unterminated-block-comment", source);
     let output = morva(&["check", path.to_str().unwrap()]);
-    fs::remove_file(path).unwrap();
+    fs::remove_file(&path).unwrap();
 
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty());
@@ -1006,4 +1016,66 @@ fn token_split_comment_cli_diagnostic_marks_the_triggering_opener() {
     let (excerpt, marker) = diagnostic_content(&stderr, 1);
     assert_eq!(excerpt, "system Sh/**//**/op {}");
     assert_eq!(marker, "         ^^");
+}
+
+#[test]
+fn check_renders_compatibility_warning_without_failing() {
+    let source = b"system Shop {\n  module Orders {}\n}\n";
+    let path = temporary_model("compat-warning", source);
+    let output = morva(&["check", path.to_str().unwrap()]);
+    fs::remove_file(&path).unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        text(&output.stdout),
+        format!("ok: {}\n", path.to_string_lossy())
+    );
+    let stderr = text(&output.stderr);
+    assert!(stderr.contains(
+        "warning[MORVA5001]: compatibility module 'Orders' is parsed but not semantically validated"
+    ));
+    assert!(stderr.contains(":2:10"), "{stderr}");
+    let (excerpt, marker) = diagnostic_content(&stderr, 2);
+    assert_eq!(excerpt, "  module Orders {}");
+    assert_eq!(marker, "         ^^^^^^");
+}
+
+#[test]
+fn project_check_maps_compatibility_warning_to_the_responsible_file() {
+    let project = temporary_project("compat-warning-project");
+    write_project_source(&project, "10-empty.morva", b"system Shop {}\n");
+    write_project_source(
+        &project,
+        "20-compat.morva",
+        b"system Shop {\n  module Orders {}\n}\n",
+    );
+
+    let output = morva(&["check", project.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        text(&output.stdout),
+        format!("ok: {}\n", project.to_string_lossy())
+    );
+    let stderr = text(&output.stderr);
+    assert_eq!(stderr.matches("warning[MORVA5001]").count(), 1);
+    assert!(stderr.contains("20-compat.morva:2:10"), "{stderr}");
+    assert!(!stderr.contains("10-empty.morva:"), "{stderr}");
+    let (excerpt, marker) = diagnostic_content(&stderr, 2);
+    assert_eq!(excerpt, "  module Orders {}");
+    assert_eq!(marker, "         ^^^^^^");
+}
+
+#[test]
+fn compatibility_warning_and_semantic_error_are_both_rendered() {
+    let source = b"system Shop {\n  module Orders {}\n  entity Item { value: Missing }\n}\n";
+    let path = temporary_model("compat-warning-error", source);
+    let output = morva(&["check", path.to_str().unwrap()]);
+    fs::remove_file(path).unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    let stderr = text(&output.stderr);
+    let warning = stderr.find("warning[MORVA5001]").expect("warning");
+    let error = stderr.find("error[MORVA2007]").expect("semantic error");
+    assert!(warning < error, "{stderr}");
 }

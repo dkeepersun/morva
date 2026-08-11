@@ -1,3 +1,4 @@
+mod analysis;
 mod ast;
 mod diagnostic;
 mod lexer;
@@ -6,10 +7,12 @@ mod project;
 mod semantic;
 mod simulate;
 
+pub use analysis::{AnalysisFinding, AnalysisReport, Notice, NoticeKind, analyze};
 pub use ast::*;
 pub use diagnostic::Diagnostic;
 pub use project::{
-    LocalSourceSpan, Project, ProjectDiagnostic, ProjectSource, SourceId, SourceMap,
+    LocalSourceSpan, Project, ProjectAnalysisReport, ProjectDiagnostic, ProjectFinding,
+    ProjectNotice, ProjectSource, SourceId, SourceMap,
 };
 pub use simulate::{
     PhaseResult, SimulationFailure, SimulationPhase, SimulationReport, StateChange, Value, simulate,
