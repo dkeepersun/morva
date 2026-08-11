@@ -56,7 +56,7 @@ development_status:
 
   epic-2: in-progress
   2-1-识别已解析但未验证的兼容容器: done
-  2-2-识别未执行的-action-soft-behavior: backlog
+  2-2-识别未执行的-action-soft-behavior: ready-for-dev
   2-3-在-inspect-中查看未建模内容: backlog
   2-4-查询-morva-的权威能力清单: backlog
   epic-2-retrospective: optional
