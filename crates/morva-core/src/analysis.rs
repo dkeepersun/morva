@@ -1,8 +1,15 @@
-use crate::{Declaration, Diagnostic, Document, Span};
+use crate::{Declaration, Diagnostic, Document, SoftBehaviorKind, Span};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NoticeKind {
-    CompatibilityContainer { kind: String, name: String },
+    CompatibilityContainer {
+        kind: String,
+        name: String,
+    },
+    ActionSoftBehavior {
+        action: String,
+        behavior: SoftBehaviorKind,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,6 +88,23 @@ fn collect_notices(declarations: &[Declaration], notices: &mut Vec<Notice>) {
                     name: container.name.text.clone(),
                 },
             });
+        }
+        if let Declaration::Action(action) = declaration {
+            for behavior in &action.soft_behaviors {
+                notices.push(Notice {
+                    code: "MORVA5002",
+                    message: format!(
+                        "action '{}' soft behavior '{}' is parsed but not semantically validated or executed by simulation",
+                        action.name.text,
+                        behavior.kind.as_str()
+                    ),
+                    span: behavior.span,
+                    kind: NoticeKind::ActionSoftBehavior {
+                        action: action.name.text.clone(),
+                        behavior: behavior.kind,
+                    },
+                });
+            }
         }
         collect_notices(declaration.declarations(), notices);
     }

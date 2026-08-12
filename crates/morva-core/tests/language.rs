@@ -1,5 +1,6 @@
 use morva_core::{
-    AnalysisFinding, ClauseExpression, ClauseKind, Declaration, NoticeKind, analyze, check, parse,
+    AnalysisFinding, ClauseExpression, ClauseKind, Declaration, NoticeKind, SoftBehaviorKind,
+    analyze, check, parse,
 };
 
 const COMPLETE_MODEL: &str = r#"system Wallet {
@@ -78,6 +79,121 @@ fn compatibility_containers_are_non_fatal_structured_notices() {
             NoticeKind::CompatibilityContainer {
                 kind: kind.to_owned(),
                 name: name.to_owned(),
+            }
+        );
+    }
+}
+
+#[test]
+fn action_soft_behaviors_keep_only_kind_and_keyword_span_in_source_order() {
+    let source = r#"system Shop {
+  entity Order { id: ID }
+  action Save(order: Order) {
+    atomic retry 99
+    idempotent key order.id
+    timeout 30
+    retry 2
+    implementation_hint {
+      adapter { nested value }
+    }
+  }
+}
+"#;
+    let document = parse(source).expect("soft behaviors parse");
+    let Declaration::System(system) = &document.declarations[0] else {
+        panic!("system")
+    };
+    let action = system
+        .declarations
+        .iter()
+        .find_map(|declaration| match declaration {
+            Declaration::Action(action) => Some(action),
+            _ => None,
+        })
+        .expect("action");
+    assert_eq!(
+        action
+            .soft_behaviors
+            .iter()
+            .map(|item| item.kind)
+            .collect::<Vec<_>>(),
+        [
+            SoftBehaviorKind::Atomic,
+            SoftBehaviorKind::Idempotent,
+            SoftBehaviorKind::Timeout,
+            SoftBehaviorKind::Retry,
+            SoftBehaviorKind::ImplementationHint,
+        ]
+    );
+    for item in &action.soft_behaviors {
+        let keyword = item.kind.as_str();
+        assert_eq!(&source[item.span.start..item.span.end], keyword);
+    }
+    assert_eq!(
+        action
+            .soft_behaviors
+            .iter()
+            .filter(|item| item.kind == SoftBehaviorKind::Atomic)
+            .count(),
+        1,
+        "a whitelisted word in opaque payload is not another item"
+    );
+    let report = analyze(&document);
+    assert!(report.errors.is_empty());
+    assert_eq!(report.notices.len(), 5);
+    for (notice, behavior) in report.notices.iter().zip([
+        SoftBehaviorKind::Atomic,
+        SoftBehaviorKind::Idempotent,
+        SoftBehaviorKind::Timeout,
+        SoftBehaviorKind::Retry,
+        SoftBehaviorKind::ImplementationHint,
+    ]) {
+        assert_eq!(notice.code, "MORVA5002");
+        assert_eq!(
+            notice.message,
+            format!(
+                "action 'Save' soft behavior '{}' is parsed but not semantically validated or executed by simulation",
+                behavior.as_str()
+            )
+        );
+        assert_eq!(
+            notice.kind,
+            NoticeKind::ActionSoftBehavior {
+                action: "Save".to_owned(),
+                behavior,
+            }
+        );
+    }
+}
+
+#[test]
+fn action_soft_behaviors_are_non_fatal_structured_notices() {
+    let source = "system Shop {\n  action Save {\n    retry 2\n    atomic\n  }\n}\n";
+    let document = parse(source).expect("soft behaviors parse");
+    let report = analyze(&document);
+    assert!(report.errors.is_empty());
+    assert!(check(&document).is_empty());
+    assert_eq!(report.notices.len(), 2);
+
+    for (notice, behavior) in report
+        .notices
+        .iter()
+        .zip([SoftBehaviorKind::Retry, SoftBehaviorKind::Atomic])
+    {
+        let keyword = behavior.as_str();
+        assert_eq!(notice.code, "MORVA5002");
+        assert_eq!(
+            notice.message,
+            format!(
+                "action 'Save' soft behavior '{keyword}' is parsed but not semantically validated or executed by simulation"
+            )
+        );
+        assert_eq!(&source[notice.span.start..notice.span.end], keyword);
+        assert_eq!(
+            notice.kind,
+            NoticeKind::ActionSoftBehavior {
+                action: "Save".to_owned(),
+                behavior,
             }
         );
     }
@@ -1422,4 +1538,126 @@ fn incomplete_syntax_has_a_span() {
         &parse("system Shop { entity Order { id ID } }").expect_err("missing colon must fail")[0];
     assert_eq!(diagnostic.code, "MORVA1006");
     assert!(diagnostic.span.end > diagnostic.span.start);
+}
+
+#[test]
+fn soft_behavior_keyword_spans_preserve_all_newline_byte_sequences() {
+    for newline in ["\n", "\r\n", "\r"] {
+        let source = [
+            "system Shop {",
+            newline,
+            "  action Save {",
+            newline,
+            "    timeout 30",
+            newline,
+            "    implementation_hint",
+            newline,
+            "    { nested { value } }",
+            newline,
+            "  }",
+            newline,
+            "}",
+            newline,
+        ]
+        .concat();
+        let document = parse(&source).expect("newline variant parses");
+        let report = analyze(&document);
+        assert_eq!(report.notices.len(), 2);
+        for (notice, keyword) in report
+            .notices
+            .iter()
+            .zip(["timeout", "implementation_hint"])
+        {
+            let start = source.find(keyword).unwrap();
+            assert_eq!(notice.span.start, start, "newline {newline:?}");
+            assert_eq!(
+                notice.span.end,
+                start + keyword.len(),
+                "newline {newline:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn malformed_soft_behaviors_keep_existing_parser_errors_without_partial_analysis() {
+    for (source, code, message, marker, span_len) in [
+        (
+            "system Shop {\n  action Save {\n    typo\n  }\n}\n",
+            "MORVA1007",
+            "unknown item in action block",
+            "typo",
+            4,
+        ),
+        (
+            "system Shop {\n  action Save {\n    atomic { value }\n  }\n}\n",
+            "MORVA1014",
+            "unexpected block for soft behavior item",
+            "{ value }",
+            1,
+        ),
+        (
+            "system Shop {\n  action Save {\n    implementation_hint\n  }\n}\n",
+            "MORVA1016",
+            "expected block after implementation_hint",
+            "}",
+            1,
+        ),
+        (
+            "system Shop {\n  action Save {\n    implementation_hint { nested\n",
+            "MORVA1003",
+            "unclosed compatibility block",
+            "{ nested",
+            1,
+        ),
+    ] {
+        let diagnostics = parse(source).expect_err("malformed input must not produce an AST");
+        assert_eq!(diagnostics.len(), 1, "{source:?}");
+        assert_eq!(diagnostics[0].code, code, "{source:?}");
+        assert_eq!(diagnostics[0].message, message, "{source:?}");
+        assert_eq!(
+            diagnostics[0].span.start,
+            source.find(marker).unwrap(),
+            "{source:?}"
+        );
+        assert_eq!(
+            diagnostics[0].span.end - diagnostics[0].span.start,
+            span_len,
+            "{source:?}"
+        );
+    }
+}
+
+#[test]
+fn soft_container_and_semantic_findings_share_source_order_and_legacy_check_parity() {
+    let source = r#"system Shop {
+  module Compat {}
+  action Save {
+    retry 2
+    retry 3
+  }
+  entity Item { value: Missing }
+}
+"#;
+    let document = parse(source).expect("syntax valid");
+    let report = analyze(&document);
+    assert_eq!(report.errors, check(&document));
+    assert_eq!(report.notices.len(), 3);
+    assert!(matches!(
+        report.findings().as_slice(),
+        [
+            AnalysisFinding::Notice(_),
+            AnalysisFinding::Notice(_),
+            AnalysisFinding::Notice(_),
+            AnalysisFinding::Error(_)
+        ]
+    ));
+    assert_eq!(
+        report
+            .notices
+            .iter()
+            .map(|notice| notice.code)
+            .collect::<Vec<_>>(),
+        ["MORVA5001", "MORVA5002", "MORVA5002"]
+    );
 }

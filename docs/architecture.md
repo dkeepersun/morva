@@ -61,7 +61,7 @@ presentation     language semantics
 
 ## 3. 核心数据模型
 
-`Document` 包含声明树。强类型声明为 `System`、`Entity`、`Enum`、`Action`、`Scenario`；其他已识别声明使用 `Container` 保存层级但不提供专有语义。
+`Document` 包含声明树。强类型声明为 `System`、`Entity`、`Enum`、`Action`、`Scenario`；其他已识别声明使用 `Container` 保存层级但不提供专有语义。`Action.soft_behaviors` 以 `SoftBehaviorKind + keyword Span` 保存最小 provenance，payload/body 不进入 AST。
 
 表达式当前仅包含 Integer、Boolean、Path 和二元比较。effects 使用独立 `Assignment`，从类型层面区分谓词与状态写入。`Span` 使用 UTF-8 字节区间；单文件 AST 保持本地 offset，多文件私有 merged AST 使用互不重叠的 checked virtual base。`SourceMap::locate_virtual_span` 只接受 merged document 的虚拟 span，并在 CLI 呈现前恢复 `SourceId + LocalSourceSpan`；`ProjectDiagnostic::Source` 已明确持有本地 diagnostic，不能再次回映射。公开 `Span` 与 `Diagnostic` 形状不变。
 
@@ -100,7 +100,7 @@ presentation     language semantics
 - Semantic checker 累积可独立发现的诊断。
 - Simulator 的静态选择错误返回 `Diagnostic`；执行期失败写入 `SimulationReport.failure`。
 - CLI 把语言/模拟失败映射到退出码 1，把用法/文件 IO 映射到 2。
-- `check()` 和 simulator 保持 error-only；additive analysis report 承载兼容容器 warning，CLI `check` 只在存在 error 时退出 1。
+- `check()` 和 simulator 保持 error-only；additive analysis report 承载兼容容器 `MORVA5001` 与 action soft behavior `MORVA5002`，CLI `check` 只在存在 error 时退出 1。
 - 不可信输入不得触发 panic；测试覆盖字符、溢出、未初始化和无效结构等边界。
 - CLI 对项目候选执行 symlink metadata、canonical root、打开文件句柄及打开前后文件身份校验，读取绑定到已验证句柄。纯标准库没有跨平台原子 `nofollow` open；Unix 使用 device/inode 强身份，其他平台退化为 length/modified 校验。并发原地改写同一 inode 的内容仍不提供快照隔离，这是无 watch/增量承诺下保留的 TOCTOU 残余。
 
@@ -111,6 +111,7 @@ presentation     language semantics
 - 不为未批准的未来功能预建 trait、插件系统或通用 runtime。
 - 新依赖需说明为何标准库不足、二进制/维护成本和测试收益。
 - `implementation_hint` 永远不进入语义真假判断或 simulator 执行路径。
+- `Action` 新增公开 `soft_behaviors` 字段、`NoticeKind` 新增 `ActionSoftBehavior` variant 是 Story 2.2 明确批准的 Rust 源码兼容例外；外部 struct literal/完整 pattern/exhaustive match 需相应迁移，其他公开契约不变。
 - 文档中的“支持”必须能指向公开 API 或自动化测试。
 
 ## 8. 已知技术债务

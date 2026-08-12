@@ -8,9 +8,10 @@
 2. `_bmad-output/implementation-artifacts/` 中与任务相关的冻结规格：确认已批准意图和边界。
 3. 与任务相关的实际源码、自动化测试和示例：建立当前行为心智模型。
 4. `docs/requirements.md`：产品目标、v0.1 需求、非目标和变更门槛。
-5. `docs/implementation-status.md`：已实现、兼容、未实现和技术债务。
-6. `docs/architecture.md`：模块职责和依赖方向。
-7. 与任务相关的其他语言/CLI/测试说明文档。
+5. `docs/language-evolution-policy.md`：表达力阶梯与红线；任何扩展语法或语义的任务必读。
+6. `docs/implementation-status.md`：已实现、兼容、未实现和技术债务。
+7. `docs/architecture.md`：模块职责和依赖方向。
+8. 与任务相关的其他语言/CLI/测试说明文档。
 
 如果文档冲突，优先级为：人工最新明确指令 → 冻结规格中的 human-owned intent → 自动化测试与源码事实 → 需求基线 → 其他说明文档 → roadmap。冻结块权威记录获批意图，源码和当前测试权威记录当前行为；规格 change log、旧测试计数及 `project-scan-report.json` 是提交锚定的历史证据，不应滚动改写为当前事实。
 
@@ -51,6 +52,7 @@
 - 一次加入多种声明、完整表达式系统或通用 runtime。
 - 修改冻结规格的 intent/boundaries/checkbox 来匹配实现。
 - 为让测试通过而放宽未知项、歧义或未初始化读取。
+- 为适配已写出的实现而放宽 `docs/language-evolution-policy.md` 的红线，特别是非线性算术红线（变量 × 变量）与图灵完备红线。
 
 ## 6. 可直接复制的新会话提示
 

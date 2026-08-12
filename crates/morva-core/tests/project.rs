@@ -1,6 +1,6 @@
 use morva_core::{
     Assignment, ClauseExpression, Declaration, Expr, ExprKind, Path, Project, ProjectFinding,
-    ScenarioItem, SimulationPhase, Span, check, parse, simulate,
+    ScenarioItem, SimulationPhase, SoftBehaviorKind, Span, check, parse, simulate,
 };
 
 fn project() -> Project {
@@ -231,6 +231,7 @@ fn rebases_every_nested_ast_span_variant_and_roundtrips_exactly() {
       invariant count >= 0
     }
     action Change(item: Item) {
+      atomic
       requires item.active
       invariant item.count >= 0
       effects {
@@ -323,6 +324,7 @@ fn collect_declaration_spans(declaration: &Declaration, spans: &mut Vec<Span>) {
                     }
                 }
             }
+            spans.extend(item.soft_behaviors.iter().map(|behavior| behavior.span));
         }
         Declaration::Scenario(item) => {
             for scenario_item in &item.items {
@@ -360,4 +362,53 @@ fn collect_expr_spans(expression: &Expr, spans: &mut Vec<Span>) {
 fn collect_path_spans(path: &Path, spans: &mut Vec<Span>) {
     spans.push(path.span);
     spans.extend(path.segments.iter().map(|segment| segment.span));
+}
+
+#[test]
+fn maps_soft_behavior_notices_once_to_distinct_project_sources() {
+    let first = "system Shop {\n  action First {\n    atomic\n  }\n}\n";
+    let second =
+        "system Shop {\n  action Other {\n    retry 2\n  }\n  entity Bad { value: Missing }\n}\n";
+    let project = Project::parse([("10-first.morva", first), ("20-second.morva", second)])
+        .expect("project parses");
+    let report = project.analyze();
+
+    assert_eq!(report.errors, project.check());
+    assert_eq!(report.notices.len(), 2);
+    assert_eq!(report.notices[0].source_id.0, 0);
+    assert_eq!(report.notices[1].source_id.0, 1);
+    assert_eq!(
+        report.notices[0].local_notice.span.start,
+        first.find("atomic").unwrap()
+    );
+    assert_eq!(
+        report.notices[1].local_notice.span.start,
+        second.find("retry").unwrap()
+    );
+    assert_eq!(
+        report.notices[0].local_notice.span.start, report.notices[1].local_notice.span.start,
+        "equal local offsets must remain bound to their own sources"
+    );
+    assert_eq!(
+        report.notices[0].local_notice.kind,
+        morva_core::NoticeKind::ActionSoftBehavior {
+            action: "First".to_owned(),
+            behavior: SoftBehaviorKind::Atomic,
+        }
+    );
+    assert_eq!(
+        report.notices[1].local_notice.kind,
+        morva_core::NoticeKind::ActionSoftBehavior {
+            action: "Other".to_owned(),
+            behavior: SoftBehaviorKind::Retry,
+        }
+    );
+    assert!(matches!(
+        report.findings().as_slice(),
+        [
+            ProjectFinding::Notice(_),
+            ProjectFinding::Notice(_),
+            ProjectFinding::Error(_)
+        ]
+    ));
 }

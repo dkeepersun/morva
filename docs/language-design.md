@@ -32,7 +32,7 @@ atomic idempotent timeout retry
 implementation_hint
 ```
 
-The current semantic core models `system`, `entity`, `enum`, `action`, and `scenario`, including enum members, fields, parameters, scenario items, and `requires`, `effects`, `ensures`, and `invariant` clauses. Broader declaration kinds remain compatibility containers. Within an action, only the documented soft items `atomic`, `idempotent`, `timeout`, `retry`, and `implementation_hint` may be ignored by the current semantic model; unknown items are errors.
+The current semantic core models `system`, `entity`, `enum`, `action`, and `scenario`, including enum members, fields, parameters, scenario items, and `requires`, `effects`, `ensures`, and `invariant` clauses. Broader declaration kinds remain compatibility containers. Within an action, only the documented soft items `atomic`, `idempotent`, `timeout`, `retry`, and `implementation_hint` are accepted outside the semantic behavior model; unknown items are errors. Their AST representation retains only kind and keyword span provenance, not payload or executable semantics.
 
 ## Sketch grammar
 
@@ -102,7 +102,7 @@ implementation_hint {
 }
 ```
 
-Ignoring a hint may produce information or a warning, never a semantic error by itself.
+Explicit analysis and CLI `check` produce one structured non-fatal `MORVA5002` warning per parsed soft item, including `implementation_hint`. The warning records its action, kind, and keyword span. The item still does not enter semantic evaluation or simulation and never creates a semantic error by itself.
 
 ## Deferred work
 

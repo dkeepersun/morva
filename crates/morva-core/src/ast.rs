@@ -219,6 +219,7 @@ pub struct Action {
     pub name: Name,
     pub parameters: Vec<Parameter>,
     pub clauses: Vec<Clause>,
+    pub soft_behaviors: Vec<SoftBehavior>,
     pub span: Span,
 }
 
@@ -232,7 +233,43 @@ impl RebaseSpans for Action {
         for clause in &mut self.clauses {
             clause.rebase_spans(base)?;
         }
+        for behavior in &mut self.soft_behaviors {
+            behavior.rebase_spans(base)?;
+        }
         Some(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SoftBehaviorKind {
+    Atomic,
+    Idempotent,
+    Timeout,
+    Retry,
+    ImplementationHint,
+}
+
+impl SoftBehaviorKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Atomic => "atomic",
+            Self::Idempotent => "idempotent",
+            Self::Timeout => "timeout",
+            Self::Retry => "retry",
+            Self::ImplementationHint => "implementation_hint",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SoftBehavior {
+    pub kind: SoftBehaviorKind,
+    pub span: Span,
+}
+
+impl RebaseSpans for SoftBehavior {
+    fn rebase_spans(&mut self, base: usize) -> Option<()> {
+        self.span.rebase_spans(base)
     }
 }
 

@@ -73,8 +73,8 @@ grill / challenge / review（规划中）
 ### FR-03 解析兼容边界
 
 - `module`、`service`、`event`、`flow`、`lifecycle`、`policy` 当前仅是兼容容器，不承诺内部语义。
-- 每个兼容容器在显式分析和 CLI `check` 中产生 `MORVA5xxx` 非致命 warning；旧 error-only `check()` API 与 simulator 不把 warning 当失败。
-- action 中仅 `atomic`、`idempotent`、`timeout`、`retry`、`implementation_hint` 可作为白名单软项被忽略。
+- 每个兼容容器在显式分析和 CLI `check` 中产生 `MORVA5001` 非致命 warning；旧 error-only `check()` API 与 simulator 不把 warning 当失败。
+- action 中仅 `atomic`、`idempotent`、`timeout`、`retry`、`implementation_hint` 可作为白名单软项被接受；每个已解析源码项在显式分析和 CLI `check` 中产生一个 `MORVA5002`，指向 keyword，并说明该项未被语义验证或模拟执行。
 - 未知 action 项必须报错，不能静默吞掉拼写错误。
 
 ### FR-04 静态语义检查
@@ -117,7 +117,7 @@ grill / challenge / review（规划中）
 ### FR-08 实现提示
 
 - `implementation_hint` 表达实现偏好，不改变模型真假。
-- 忽略提示最多产生信息或警告，不得单独造成语义错误。
+- 每个已解析提示产生结构化非致命 `MORVA5002`，不得单独造成语义错误；提示正文仍不进入语义求值或模拟。
 
 ## 6. 非功能需求
 

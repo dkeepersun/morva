@@ -87,6 +87,10 @@ fn check_parse_and_inspect_the_example() {
         text(&checked.stderr).matches("warning[MORVA5001]").count(),
         1
     );
+    assert_eq!(
+        text(&checked.stderr).matches("warning[MORVA5002]").count(),
+        2
+    );
 
     let parsed = morva(&["parse", path]);
     assert!(parsed.status.success(), "{}", text(&parsed.stderr));
@@ -445,11 +449,12 @@ fn long_line_simulation_failure_uses_the_bounded_diagnostic_window() {
 fn control_characters_in_utf8_paths_are_escaped_for_every_cli_result() {
     let valid = temporary_model(
         "path-\n\t\r\u{1b}\u{7f}-success",
-        b"system Shop { module Orders {} }\n",
+        b"system Shop { action Save { retry 2 } }\n",
     );
     let success = morva(&["check", valid.to_str().expect("UTF-8 path")]);
     fs::remove_file(valid).expect("remove fixture");
     assert!(success.status.success());
+    assert!(text(&success.stderr).contains("warning[MORVA5002]"));
 
     let missing = std::env::temp_dir().join(format!(
         "morva-path-\n\t\r\u{1b}\u{7f}-missing-{}-{}-absent.morva",
@@ -1078,4 +1083,118 @@ fn compatibility_warning_and_semantic_error_are_both_rendered() {
     let warning = stderr.find("warning[MORVA5001]").expect("warning");
     let error = stderr.find("error[MORVA2007]").expect("semantic error");
     assert!(warning < error, "{stderr}");
+}
+
+#[test]
+fn check_renders_action_soft_behavior_warning_without_failing() {
+    let source = b"system Shop {\n  action Save {\n    retry 2\n  }\n}\n";
+    let path = temporary_model("soft-warning", source);
+    let output = morva(&["check", path.to_str().unwrap()]);
+    fs::remove_file(&path).unwrap();
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        text(&output.stdout),
+        format!("ok: {}\n", path.to_string_lossy())
+    );
+    let stderr = text(&output.stderr);
+    assert!(stderr.contains(
+        "warning[MORVA5002]: action 'Save' soft behavior 'retry' is parsed but not semantically validated or executed by simulation"
+    ));
+    assert!(stderr.contains(":3:5"), "{stderr}");
+    let (excerpt, marker) = diagnostic_content(&stderr, 3);
+    assert_eq!(excerpt, "    retry 2");
+    assert_eq!(marker, "    ^^^^^");
+}
+
+#[test]
+fn project_check_maps_soft_warnings_and_keeps_merged_order() {
+    let project = temporary_project("soft-warning-project");
+    write_project_source(&project, "10-empty.morva", b"system Shop {}\n");
+    write_project_source(
+        &project,
+        "20-soft.morva",
+        b"system Shop {\n  action Save {\n    atomic\n    retry 2\n  }\n  entity Bad { value: Missing }\n}\n",
+    );
+
+    let output = morva(&["check", project.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    let stderr = text(&output.stderr);
+    assert_eq!(stderr.matches("warning[MORVA5002]").count(), 2);
+    assert!(stderr.contains("20-soft.morva:3:5"), "{stderr}");
+    assert!(stderr.contains("20-soft.morva:4:5"), "{stderr}");
+    assert!(!stderr.contains("10-empty.morva:"), "{stderr}");
+    let atomic = stderr.find("soft behavior 'atomic'").unwrap();
+    let retry = stderr.find("soft behavior 'retry'").unwrap();
+    let error = stderr.find("error[MORVA2007]").unwrap();
+    assert!(atomic < retry && retry < error, "{stderr}");
+}
+
+#[test]
+fn malformed_soft_behavior_cli_input_reports_only_the_parser_error() {
+    let source = b"system Shop {\n  action Save {\n    atomic { value }\n  }\n}\n";
+    let path = temporary_model("soft-syntax", source);
+    let output = morva(&["check", path.to_str().unwrap()]);
+    fs::remove_file(path).unwrap();
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stdout.is_empty());
+    let stderr = text(&output.stderr);
+    assert!(stderr.contains("error[MORVA1014]"), "{stderr}");
+    assert!(!stderr.contains("warning[MORVA5002]"), "{stderr}");
+}
+
+#[test]
+fn cli_simulation_output_is_identical_with_or_without_soft_behaviors() {
+    let plain = br#"system Test {
+  entity Counter { count: Integer }
+  action Increment(counter: Counter) { effects counter.count += 1 }
+  scenario Happy {
+    given counter.count = 1
+    run Increment(counter)
+    expect counter.count == 2
+  }
+}
+"#;
+    let soft = br#"system Test {
+  entity Counter { count: Integer }
+  action Increment(counter: Counter) {
+    atomic
+    idempotent
+    timeout 30
+    retry 2
+    implementation_hint { adapter { ignored } }
+    effects counter.count += 1
+  }
+  scenario Happy {
+    given counter.count = 1
+    run Increment(counter)
+    expect counter.count == 2
+  }
+}
+"#;
+    let plain_path = temporary_model("plain-simulation", plain);
+    let soft_path = temporary_model("soft-simulation", soft);
+    let plain_output = morva(&["simulate", plain_path.to_str().unwrap(), "Happy"]);
+    let soft_output = morva(&["simulate", soft_path.to_str().unwrap(), "Happy"]);
+    fs::remove_file(plain_path).unwrap();
+    fs::remove_file(soft_path).unwrap();
+
+    assert!(
+        plain_output.status.success(),
+        "{}",
+        text(&plain_output.stderr)
+    );
+    assert!(
+        soft_output.status.success(),
+        "{}",
+        text(&soft_output.stderr)
+    );
+    assert_eq!(soft_output.stdout, plain_output.stdout);
+    assert!(soft_output.stderr.is_empty());
+    let stdout = text(&soft_output.stdout);
+    assert!(!stdout.contains("atomic"));
+    assert!(!stdout.contains("retry"));
+    assert!(!stdout.contains("implementation_hint"));
 }

@@ -20,12 +20,12 @@
 - LF、CRLF、CR 统一作为单个逻辑换行；注释、parser 分隔、原源 byte span 与 CLI 混合换行行列保持一致。
 - 保留 `//` 行注释（含 EOF 终止），并支持 token 间可嵌套的 `/* ... */` 块注释；块内逻辑换行仍分隔语法，未闭合时以 `MORVA1024` 标记最外层 opener。无换行块注释在任何 lexer 内容中切分 identifier/Integer 时以 `MORVA1025` 标记触发 opener。
 - 普通诊断和模拟失败共享有界源码窗口；excerpt 与 marker 分别不超过 160 个渲染字符，换行终止符不回显，所有 UTF-8 路径输出安全转义控制字符。
-- Additive core analysis report 为每个兼容容器生成结构化 `MORVA5001` warning；CLI `check` 安全渲染 warning 且 warning-only 仍退出 0，旧 `check()` 与 simulator 保持 error-only。
+- Additive core analysis report 为每个兼容容器生成结构化 `MORVA5001`，并为每个 action soft behavior 生成结构化 `MORVA5002`；Project 将 keyword span 单次回映到责任源，CLI `check` 安全渲染 warning 且 warning-only 仍退出 0，旧 `check()` 与 simulator 保持 error-only。
 
 ## 兼容解析但没有专有语义
 
 - `module`、`service`、`event`、`flow`、`lifecycle`、`policy`。
-- `atomic`、`idempotent`、`timeout`、`retry`、`implementation_hint`。
+- `atomic`、`idempotent`、`timeout`、`retry`、`implementation_hint`：AST 只保留 kind 与 keyword span provenance；payload/body 不保留、不验证、不执行，但显式 analysis 会报告 `MORVA5002`。
 
 这些构造不得出现在“已验证能力”清单中。修改兼容行为前应先保护已有示例。
 

@@ -17,8 +17,8 @@ The current v0.1 scope is intentionally small:
 - deterministic `check`, `parse`, and `inspect` commands with source diagnostics;
 - file-or-directory input, so one system can be split across independently maintained `.morva` files;
 - pure in-memory simulation for one-action scenarios using enum, Boolean, and Integer state;
-- compatibility parsing for broader declarations and documented soft behavior already used by the example.
-- explicit non-fatal `check` warnings when compatibility containers are parsed without container-specific semantic validation.
+- compatibility parsing for broader declarations and documented soft behavior already used by the example;
+- explicit non-fatal `check` warnings when compatibility containers or action soft behavior are parsed without corresponding validation or execution.
 
 Formal verification, code generation, infrastructure configuration, and a large keyword taxonomy are explicitly out of scope for v0.1.
 
@@ -35,9 +35,11 @@ All four commands parse and semantically check the model first. `parse` prints t
 currently modeled AST surface; compatibility-only text that the parser deliberately
 ignores is not reproduced.
 
-`check` reports compatibility containers as `MORVA5001` warnings on stderr while
-remaining successful when no semantic errors exist. The bundled single-file example
-therefore warns for its `module Orders` wrapper; this does not change its semantics.
+`check` reports compatibility containers as `MORVA5001` warnings and each parsed
+action soft behavior as `MORVA5002` on stderr while remaining successful when no
+semantic errors exist. The bundled single-file example therefore emits three warnings:
+one for `module Orders`, plus one each for `idempotent` and `implementation_hint`.
+These warnings do not change its semantics or simulation.
 
 Each command also accepts a directory. A project directory contains direct-child,
 lowercase `.morva` regular files, each with the same `system` wrapper. Morva sorts

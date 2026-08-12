@@ -244,6 +244,7 @@ impl Parser {
         };
         self.expect_block("expected action block")?;
         let mut clauses = Vec::new();
+        let mut soft_behaviors = Vec::new();
         loop {
             self.newlines();
             if self.at_eof() {
@@ -267,9 +268,10 @@ impl Parser {
             if let Some(kind) = clause_kind {
                 clauses.push(self.clause(kind)?);
             } else if self.at_identifier("implementation_hint") {
-                self.skip_implementation_hint()?;
-            } else if self.at_any_identifier(&["atomic", "idempotent", "timeout", "retry"]) {
-                self.skip_soft_behavior_line()?;
+                soft_behaviors
+                    .push(self.skip_implementation_hint(SoftBehaviorKind::ImplementationHint)?);
+            } else if let Some(kind) = self.current_soft_behavior_kind() {
+                soft_behaviors.push(self.skip_soft_behavior_line(kind)?);
             } else {
                 return Err(self.error("MORVA1007", "unknown item in action block"));
             }
@@ -278,6 +280,7 @@ impl Parser {
             name,
             parameters,
             clauses,
+            soft_behaviors,
             span: Span {
                 start: start.start,
                 end: self.previous().span.end,
@@ -528,14 +531,21 @@ impl Parser {
         Ok(Path { segments, span })
     }
 
-    fn skip_implementation_hint(&mut self) -> Result<(), Vec<Diagnostic>> {
-        self.bump();
+    fn skip_implementation_hint(
+        &mut self,
+        kind: SoftBehaviorKind,
+    ) -> Result<SoftBehavior, Vec<Diagnostic>> {
+        let span = self.bump().span;
         self.expect_block("expected block after implementation_hint")?;
-        self.skip_balanced_contents()
+        self.skip_balanced_contents()?;
+        Ok(SoftBehavior { kind, span })
     }
 
-    fn skip_soft_behavior_line(&mut self) -> Result<(), Vec<Diagnostic>> {
-        self.bump();
+    fn skip_soft_behavior_line(
+        &mut self,
+        kind: SoftBehaviorKind,
+    ) -> Result<SoftBehavior, Vec<Diagnostic>> {
+        let span = self.bump().span;
         while !self.at_eof() && !self.at_newline() && !self.at_symbol('}') {
             if self.at_symbol('{') {
                 return Err(self.error("MORVA1014", "unexpected block for soft behavior item"));
@@ -545,7 +555,7 @@ impl Parser {
         if self.at_newline() {
             self.bump();
         }
-        Ok(())
+        Ok(SoftBehavior { kind, span })
     }
 
     fn skip_compatibility_item(&mut self) -> Result<(), Vec<Diagnostic>> {
@@ -705,8 +715,14 @@ impl Parser {
         DECLARATION_KINDS.contains(&value).then_some(value)
     }
 
-    fn at_any_identifier(&self, expected: &[&str]) -> bool {
-        matches!(&self.current().kind, TokenKind::Identifier(value) if expected.contains(&value.as_str()))
+    fn current_soft_behavior_kind(&self) -> Option<SoftBehaviorKind> {
+        match identifier_text(self.current())? {
+            "atomic" => Some(SoftBehaviorKind::Atomic),
+            "idempotent" => Some(SoftBehaviorKind::Idempotent),
+            "timeout" => Some(SoftBehaviorKind::Timeout),
+            "retry" => Some(SoftBehaviorKind::Retry),
+            _ => None,
+        }
     }
 
     fn at_identifier(&self, expected: &str) -> bool {

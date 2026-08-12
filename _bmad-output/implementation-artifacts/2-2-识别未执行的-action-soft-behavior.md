@@ -1,6 +1,10 @@
+---
+baseline_commit: bc81facbf3afe9a76993444fbbcb07106a1f797c
+---
+
 # Story 2.2: 识别未执行的 action soft behavior
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -20,36 +24,36 @@ so that 我不会把 `atomic`、重试设置或实现提示误认为模拟器已
 
 ## Tasks / Subtasks
 
-- [ ] Task 0: 在修改生产代码前冻结 Story 2.2 契约（AC: 1-7）
-  - [ ] 创建并批准独立冻结规格，明确 `MORVA5002`、message/category/keyword span、line/block item 边界、排序、退出码、两项公开 Rust API 源码兼容例外、迁移说明与非目标；未获批准不得开始 Task 1。
+- [x] Task 0: 在修改生产代码前冻结 Story 2.2 契约（AC: 1-7）
+  - [x] 创建并批准独立冻结规格，明确 `MORVA5002`、message/category/keyword span、line/block item 边界、排序、退出码、两项公开 Rust API 源码兼容例外、迁移说明与非目标；未获批准不得开始 Task 1。
 
-- [ ] Task 1: 以最小 AST provenance 保留 soft behavior（AC: 1, 2, 5, 7）
-  - [ ] 在 `morva-core` 定义结构化 `SoftBehaviorKind` 与 `SoftBehavior { kind, span }`，kind 仅包含现有五项白名单，span 固定为 keyword token span。
-  - [ ] 为 `Action` 增加按源码顺序的 `soft_behaviors`，并在 `RebaseSpans` 中 checked rebase 每个 soft span；不把 soft behavior 伪装成 `Clause` 或可执行表达式。
-  - [ ] 重构 `action()` 与现有 skip helpers，在保留 kind/keyword span 后继续丢弃其余 token；保持未知项 `MORVA1007`、line item 非法 block `MORVA1014`、hint 缺 opening block `MORVA1016`、已打开但未闭合 hint 的 `MORVA1003: unclosed compatibility block` 与 opening-brace span，以及 `MORVA1024/1025` 等现有错误路径；失败时不产生 partial notice。
+- [x] Task 1: 以最小 AST provenance 保留 soft behavior（AC: 1, 2, 5, 7）
+  - [x] 在 `morva-core` 定义结构化 `SoftBehaviorKind` 与 `SoftBehavior { kind, span }`，kind 仅包含现有五项白名单，span 固定为 keyword token span。
+  - [x] 为 `Action` 增加按源码顺序的 `soft_behaviors`，并在 `RebaseSpans` 中 checked rebase 每个 soft span；不把 soft behavior 伪装成 `Clause` 或可执行表达式。
+  - [x] 重构 `action()` 与现有 skip helpers，在保留 kind/keyword span 后继续丢弃其余 token；保持未知项 `MORVA1007`、line item 非法 block `MORVA1014`、hint 缺 opening block `MORVA1016`、已打开但未闭合 hint 的 `MORVA1003: unclosed compatibility block` 与 opening-brace span，以及 `MORVA1024/1025` 等现有错误路径；失败时不产生 partial notice。
 
-- [ ] Task 2: 扩展现有 additive notice 模型（AC: 1, 3, 7）
-  - [ ] 在 `NoticeKind` 新增结构化 `ActionSoftBehavior { action, behavior }`，复用 `SoftBehaviorKind`，供 Story 2.3 消费，不解析 message。
-  - [ ] 每个 soft behavior 生成 `MORVA5002`，固定消息模板为 `action '{action}' soft behavior '{behavior}' is parsed but not semantically validated or executed by simulation`，责任 span 为 keyword span。
-  - [ ] 扩展 `collect_notices` 而不复制 semantic check；保持 notices 的 source-span 排序、`AnalysisReport::findings()` 的 error-first tie-break 及旧 `check()` error-only 路径。
+- [x] Task 2: 扩展现有 additive notice 模型（AC: 1, 3, 7）
+  - [x] 在 `NoticeKind` 新增结构化 `ActionSoftBehavior { action, behavior }`，复用 `SoftBehaviorKind`，供 Story 2.3 消费，不解析 message。
+  - [x] 每个 soft behavior 生成 `MORVA5002`，固定消息模板为 `action '{action}' soft behavior '{behavior}' is parsed but not semantically validated or executed by simulation`，责任 span 为 keyword span。
+  - [x] 扩展 `collect_notices` 而不复制 semantic check；保持 notices 的 source-span 排序、`AnalysisReport::findings()` 的 error-first tie-break 及旧 `check()` error-only 路径。
 
-- [ ] Task 3: 复用 Project/CLI 通用 warning 管线（AC: 3, 4, 5, 7）
-  - [ ] 证明既有 `Project::analyze()` 可将 soft notice 恢复为责任源的 local span；不修改或复制 source-map 规则。
-  - [ ] 证明 CLI `check` 通过既有 merged finding view 和共享 `render_source_finding` 自动呈现 `MORVA5002`；CLI 不能识别 soft behavior kind、重新排序或创建第二套 renderer。
-  - [ ] 保持 warning-only exit 0 + `ok:`、warning+error exit 1 + empty success stdout；语法失败只呈现原 error。
+- [x] Task 3: 复用 Project/CLI 通用 warning 管线（AC: 3, 4, 5, 7）
+  - [x] 证明既有 `Project::analyze()` 可将 soft notice 恢复为责任源的 local span；不修改或复制 source-map 规则。
+  - [x] 证明 CLI `check` 通过既有 merged finding view 和共享 `render_source_finding` 自动呈现 `MORVA5002`；CLI 不能识别 soft behavior kind、重新排序或创建第二套 renderer。
+  - [x] 保持 warning-only exit 0 + `ok:`、warning+error exit 1 + empty success stdout；语法失败只呈现原 error。
 
-- [ ] Task 4: 建立 core、project、CLI 和 simulation 回归矩阵（AC: 1-7）
-  - [ ] Core：五种 kind、line 参数/路径、嵌套 hint block、exact code/message/category/action/keyword span、多项/重复项 once-only 与源码顺序；`atomic retry 2` 只产生一个 `Atomic` notice，两行 `atomic` / `retry 2` 才产生两个 notice。
-  - [ ] Core：soft + container + semantic error 混合 finding 顺序、clean analysis、旧 `check()` parity，以及未知/损坏 action item 仅返回原 parser error。
-  - [ ] Newline/comment：LF/CRLF/CR 的原始 keyword byte span；soft/hint 跳过区的 token-split 仍以 `MORVA1025` 失败且不产生 warning。
-  - [ ] Project：后排序文件本地映射、两文件相同 local offset 不串源、`Project::check()` parity 与 merged finding 顺序。
-  - [ ] CLI：单文件/目录的 warning-only、warning+error、语法失败、路径控制字符、本地行列/marker、stdout/stderr/退出码和确定顺序。
-  - [ ] Simulation：带/不带 soft behavior 的模型产生相同七阶段、changes、final state 与 result，输出不暗示 soft behavior 被执行。
+- [x] Task 4: 建立 core、project、CLI 和 simulation 回归矩阵（AC: 1-7）
+  - [x] Core：五种 kind、line 参数/路径、嵌套 hint block、exact code/message/category/action/keyword span、多项/重复项 once-only 与源码顺序；`atomic retry 2` 只产生一个 `Atomic` notice，两行 `atomic` / `retry 2` 才产生两个 notice。
+  - [x] Core：soft + container + semantic error 混合 finding 顺序、clean analysis、旧 `check()` parity，以及未知/损坏 action item 仅返回原 parser error。
+  - [x] Newline/comment：LF/CRLF/CR 的原始 keyword byte span；soft/hint 跳过区的 token-split 仍以 `MORVA1025` 失败且不产生 warning。
+  - [x] Project：后排序文件本地映射、两文件相同 local offset 不串源、`Project::check()` parity 与 merged finding 顺序。
+  - [x] CLI：单文件/目录的 warning-only、warning+error、语法失败、路径控制字符、本地行列/marker、stdout/stderr/退出码和确定顺序。
+  - [x] Simulation：带/不带 soft behavior 的模型产生相同七阶段、changes、final state 与 result，输出不暗示 soft behavior 被执行。
 
-- [ ] Task 5: 同步当前事实与交付证据（AC: 1-7）
-  - [ ] 同步 requirements、language reference、implementation status、testing strategy、architecture、project context、README/CLI 中与 soft warning、AST 形状和可见输出直接相关的表述。
-  - [ ] 同步 `docs/language-design.md`：soft items 仍不进入语义求值或模拟，但显式 analysis 和 CLI `check` 会对每个已解析 item 产生一个结构化非致命 warning。
-  - [ ] 运行 fmt、locked strict Clippy、workspace tests、单/多文件八条示例闭环和 `git diff --check`；`examples/order.morva` 必须恰好产生 3 个 warning（`MORVA5001 × 1` + `MORVA5002 × 2`），`examples/order-project` 必须恰好产生 2 个指向 `20-actions.morva` 的 `MORVA5002`；其余三命令语义不变。只记录本地门禁证据，不得声称 hosted workflow 或 required quality gate 已通过；现有 CI shards 已覆盖这些测试，除非测试位置超出现有 shards，不修改 workflow。
+- [x] Task 5: 同步当前事实与交付证据（AC: 1-7）
+  - [x] 同步 requirements、language reference、implementation status、testing strategy、architecture、project context、README/CLI 中与 soft warning、AST 形状和可见输出直接相关的表述。
+  - [x] 同步 `docs/language-design.md`：soft items 仍不进入语义求值或模拟，但显式 analysis 和 CLI `check` 会对每个已解析 item 产生一个结构化非致命 warning。
+  - [x] 运行 fmt、locked strict Clippy、workspace tests、单/多文件八条示例闭环和 `git diff --check`；`examples/order.morva` 必须恰好产生 3 个 warning（`MORVA5001 × 1` + `MORVA5002 × 2`），`examples/order-project` 必须恰好产生 2 个指向 `20-actions.morva` 的 `MORVA5002`；其余三命令语义不变。只记录本地门禁证据，不得声称 hosted workflow 或 required quality gate 已通过；现有 CI shards 已覆盖这些测试，除非测试位置超出现有 shards，不修改 workflow。
 
 ## Dev Notes
 
@@ -148,12 +152,49 @@ GPT-5 Codex
 
 ### Debug Log References
 
+- RED: public language test failed because `SoftBehaviorKind` and `Action.soft_behaviors` did not exist.
+- RED: structured notice test failed because `NoticeKind::ActionSoftBehavior` did not exist.
+- GREEN/REFACTOR: focused core, project, simulation, and real CLI tests passed after the minimal AST/parser/analysis changes; no Project, CLI, semantic, or simulator production branch was needed.
+- Final local gates: `cargo fmt --all --check`, locked strict Clippy, `cargo test --workspace --locked` (151 tests), `git diff --check`, and eight single/project example commands all passed.
+
+### Implementation Plan
+
+- Freeze `MORVA5002` and the two approved public Rust source-compatibility exceptions before production changes.
+- Retain only soft behavior kind and keyword span in the AST, then emit notices through the existing additive analysis path.
+- Prove Project mapping, CLI rendering, parser-error parity, and simulation neutrality through public integration seams.
+
 ### Completion Notes List
 
 - Ultimate context engine analysis completed - comprehensive developer guide created.
+- Added five-kind `SoftBehaviorKind` provenance and checked project-span rebasing without retaining payload or implementation-hint bodies.
+- Added one structured, non-fatal `MORVA5002` per parsed source item with stable action/kind/message/keyword span and deterministic merged ordering.
+- Reused the existing Project/CLI notice pipeline unchanged; warning-only stays exit 0 with `ok:`, mixed errors stay exit 1, and parser failures produce no partial warning.
+- Verified soft behaviors do not change seven-phase simulation reports or parse/inspect/simulate CLI output.
+- Synchronized public documentation and explicit migration guidance; recorded only local verification evidence.
 
 ### File List
+
+- README.md
+- _bmad-output/implementation-artifacts/2-2-识别未执行的-action-soft-behavior.md
+- _bmad-output/implementation-artifacts/spec-action-soft-behavior-warnings.md
+- _bmad-output/implementation-artifacts/sprint-status.yaml
+- crates/morva-core/src/analysis.rs
+- crates/morva-core/src/ast.rs
+- crates/morva-core/src/parser.rs
+- crates/morva-core/tests/language.rs
+- crates/morva-core/tests/project.rs
+- crates/morva-core/tests/simulation.rs
+- crates/morva-cli/tests/cli.rs
+- docs/architecture.md
+- docs/cli.md
+- docs/implementation-status.md
+- docs/language-design.md
+- docs/language-reference.md
+- docs/project-context.md
+- docs/requirements.md
+- docs/testing-strategy.md
 
 ### Change Log
 
 - 2026-08-11: Created comprehensive Story 2.2 context and marked it ready for development.
+- 2026-08-11: Implemented structured action soft-behavior provenance and `MORVA5002` warnings; added cross-layer regressions, synchronized documentation, and marked the story ready for review.

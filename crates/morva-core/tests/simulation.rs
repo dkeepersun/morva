@@ -473,3 +473,46 @@ fn obvious_transition_contradictions_fail_static_check_before_simulation() {
     let diagnostic = simulate(&document, "Invalid").expect_err("static check must fail");
     assert_eq!(diagnostic, diagnostics[0]);
 }
+
+#[test]
+fn soft_behaviors_do_not_change_any_simulation_result_field() {
+    let plain = r#"system Test {
+  entity Counter { count: Integer }
+  action Increment(counter: Counter) {
+    effects counter.count += 1
+    ensures counter.count == 2
+  }
+  scenario Happy {
+    given counter.count = 1
+    run Increment(counter)
+    expect counter.count == 2
+  }
+}
+"#;
+    let soft = r#"system Test {
+  entity Counter { count: Integer }
+  action Increment(counter: Counter) {
+    atomic
+    idempotent by counter.count
+    timeout 30
+    retry 2
+    implementation_hint {
+      adapter { external ignored }
+    }
+    effects counter.count += 1
+    ensures counter.count == 2
+  }
+  scenario Happy {
+    given counter.count = 1
+    run Increment(counter)
+    expect counter.count == 2
+  }
+}
+"#;
+
+    let plain_report = simulate(&checked(plain), "Happy").unwrap();
+    let soft_report = simulate(&checked(soft), "Happy").unwrap();
+    assert_eq!(soft_report, plain_report);
+    assert_eq!(soft_report.phases.len(), 7);
+    assert!(soft_report.succeeded());
+}

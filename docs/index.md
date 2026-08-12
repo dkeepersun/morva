@@ -13,11 +13,12 @@
 ## 必读文档
 
 1. [产品与需求基线](requirements.md) — 定位、功能/非功能需求、非目标、变更控制
-2. [实现状态](implementation-status.md) — 已实现、仅兼容、已知风险和候选下一步
-3. [架构](architecture.md) — crate/module 职责、数据流、约束和技术债务
-4. [语言参考](language-reference.md) — 当前可依赖的具体语法和语义
-5. [AI 开发交接协议](ai-handoff.md) — 读取优先级、工作方式和禁止漂移
-6. [Project Context](project-context.md) — 给 AI 的短小强制规则
+2. [语言演进决策](language-evolution-policy.md) — 表达力阶梯、不可跨越的红线、`opaque` 逃生舱；约束后续每一份规格
+3. [实现状态](implementation-status.md) — 已实现、仅兼容、已知风险和候选下一步
+4. [架构](architecture.md) — crate/module 职责、数据流、约束和技术债务
+5. [语言参考](language-reference.md) — 当前可依赖的具体语法和语义
+6. [AI 开发交接协议](ai-handoff.md) — 读取优先级、工作方式和禁止漂移
+7. [Project Context](project-context.md) — 给 AI 的短小强制规则
 
 ## 开发与验证
 
