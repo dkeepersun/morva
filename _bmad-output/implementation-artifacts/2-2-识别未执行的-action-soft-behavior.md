@@ -55,6 +55,10 @@ so that 我不会把 `atomic`、重试设置或实现提示误认为模拟器已
   - [x] 同步 `docs/language-design.md`：soft items 仍不进入语义求值或模拟，但显式 analysis 和 CLI `check` 会对每个已解析 item 产生一个结构化非致命 warning。
   - [x] 运行 fmt、locked strict Clippy、workspace tests、单/多文件八条示例闭环和 `git diff --check`；`examples/order.morva` 必须恰好产生 3 个 warning（`MORVA5001 × 1` + `MORVA5002 × 2`），`examples/order-project` 必须恰好产生 2 个指向 `20-actions.morva` 的 `MORVA5002`；其余三命令语义不变。只记录本地门禁证据，不得声称 hosted workflow 或 required quality gate 已通过；现有 CI shards 已覆盖这些测试，除非测试位置超出现有 shards，不修改 workflow。
 
+### Review Findings
+
+- [ ] [Review][Patch] 拒绝在 `implementation_hint` block 同一逻辑行继续识别第二个 soft item，避免 `implementation_hint {} atomic` 成功并产生两个 `MORVA5002` [crates/morva-core/src/parser.rs:270]
+
 ## Dev Notes
 
 ### Current Implementation Facts

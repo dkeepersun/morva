@@ -1,0 +1,22 @@
+system Payments {
+  module Refunds {
+    enum RefundStatus {
+      Pending
+      Approved
+      Rejected
+    }
+
+    entity Refund {
+      id: ID
+      status: RefundStatus
+    }
+
+    action ApproveRefund(refund: Refund) {
+      atomic
+      retry 3
+      requires refund.status == Pending
+      effects refund.status = Approved
+      ensures refund.status == Approved
+    }
+  }
+}

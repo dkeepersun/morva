@@ -1,0 +1,22 @@
+system Payments {
+  enum RefundStatus {
+    Pending
+    Approved
+    Rejected
+  }
+
+  entity Refund {
+    id: ID
+    status: RefundStatus
+  }
+
+  action ApproveRefund(refund: Refund) {
+    /* REVIEW BLOCKER:
+       Atomic execution and at-most-three retries are required by the source
+       requirement but are not represented by Morva v0.1 semantics.
+    */
+    requires refund.status == Pending
+    effects refund.status = Approved
+    ensures refund.status == Approved
+  }
+}

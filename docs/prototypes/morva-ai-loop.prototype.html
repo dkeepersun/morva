@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Morva AI 闭环逻辑原型</title>
+  <style>
+    :root { color-scheme: light; --ink:#1e293b; --muted:#64748b; --line:#dbe3ec; --panel:#f8fafc; --accent:#2563eb; --warn:#b45309; --bad:#b91c1c; --good:#047857; }
+    * { box-sizing:border-box; }
+    body { margin:0; font:15px/1.55 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--ink); background:#eef3f8; }
+    main { max-width:1180px; margin:0 auto; padding:32px 20px 56px; }
+    h1,h2,h3 { line-height:1.2; margin-top:0; }
+    h1 { font-size:30px; margin-bottom:8px; }
+    h2 { font-size:18px; }
+    .notice { color:var(--bad); font-weight:700; letter-spacing:.02em; }
+    .intro,.panel { background:white; border:1px solid var(--line); border-radius:12px; padding:20px; }
+    .intro { margin-bottom:18px; }
+    .question { border-left:4px solid var(--accent); padding-left:14px; color:#334155; }
+    .tabs { display:flex; flex-wrap:wrap; gap:8px; margin:18px 0; }
+    button { border:1px solid #b9c6d5; border-radius:8px; background:white; color:var(--ink); padding:9px 12px; cursor:pointer; font:inherit; }
+    button:hover { border-color:var(--accent); }
+    button.active,.primary { color:white; background:var(--accent); border-color:var(--accent); }
+    button:disabled { opacity:.42; cursor:not-allowed; }
+    .grid { display:grid; grid-template-columns:minmax(0,1.08fr) minmax(0,.92fr); gap:18px; }
+    .stack { display:grid; gap:18px; }
+    .facts { display:grid; grid-template-columns:150px 1fr; gap:8px 14px; margin:0; }
+    .facts dt { color:var(--muted); }
+    .facts dd { margin:0; font-weight:600; overflow-wrap:anywhere; }
+    .phase { display:inline-block; padding:3px 9px; border-radius:999px; background:#dbeafe; color:#1d4ed8; font-weight:700; }
+    .verdict-accept { color:var(--good); }
+    .verdict-reject { color:var(--bad); }
+    .verdict-block { color:var(--warn); }
+    .actions,.guided-actions { display:flex; flex-wrap:wrap; gap:8px; }
+    .guided { margin-top:18px; }
+    .guided ol { padding-left:20px; }
+    .step-done { color:var(--good); }
+    pre { margin:0; padding:14px; max-height:340px; overflow:auto; white-space:pre-wrap; word-break:break-word; border-radius:8px; background:#0f172a; color:#dbeafe; font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .source { color:#e2e8f0; }
+    .finding { border-left:3px solid var(--bad); padding-left:10px; margin:10px 0; }
+    .warning { border-color:var(--warn); }
+    .muted { color:var(--muted); }
+    .log { margin:0; padding-left:20px; }
+    @media (max-width:850px) { .grid { grid-template-columns:1fr; } .facts { grid-template-columns:110px 1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <section class="intro">
+    <div class="notice">THROWAWAY PROTOTYPE — 不属于生产协议或 Morva 实现</div>
+    <h1>Morva：AI 候选到人工裁决</h1>
+    <p class="question"><strong>要验证的问题：</strong>一个只读协议若明确区分 invalid、valid、coverage gap 与 human decision，是否足以阻止“check 通过 = 需求正确 = 自动接受”的错误推论？</p>
+    <p>三个样本由独立 Codex 代理于 2026-08-13 生成，并已用当前 Morva CLI 实测。选择标签，然后按引导按钮体验完整状态转换；也可以用自由操作故意越序。</p>
+  </section>
+
+  <nav class="tabs" id="tabs" aria-label="验证样本"></nav>
+
+  <div class="grid">
+    <div class="stack">
+      <section class="panel">
+        <h2>当前完整状态</h2>
+        <dl class="facts" id="facts"></dl>
+      </section>
+
+      <section class="panel">
+        <h2>自由操作</h2>
+        <p class="muted">非法转换会被拒绝并记录；协议不能跳过检查、代替修订或作出人工决定。</p>
+        <div class="actions" id="actions"></div>
+      </section>
+
+      <section class="panel guided">
+        <h2>引导流程</h2>
+        <p id="scenario-description"></p>
+        <ol id="guided-steps"></ol>
+      </section>
+
+      <section class="panel">
+        <h2>状态日志</h2>
+        <ol class="log" id="log"></ol>
+      </section>
+    </div>
+
+    <div class="stack">
+      <section class="panel">
+        <h2>当前候选源码</h2>
+        <pre class="source" id="source"></pre>
+      </section>
+      <section class="panel">
+        <h2>只读协议快照</h2>
+        <pre id="protocol"></pre>
+      </section>
+      <section class="panel">
+        <h2>诊断与人工判断</h2>
+        <div id="reasoning"></div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script>
+// Portable pure state machine. It has no DOM dependency.
+const LoopModel = (() => {
+  const transitions = {
+    empty: ["GENERATE"],
+    generated: ["CHECK"],
+    checked: ["DIAGNOSE"],
+    diagnosed: ["REVISE"],
+    revised: ["RECHECK"],
+    rechecked: ["HUMAN_ACCEPT", "HUMAN_REJECT", "HUMAN_BLOCK"],
+    decided: []
+  };
+
+  function initialState(scenarioId) {
+    return { scenarioId, phase:"empty", intentIdentity:`intent:${scenarioId}`, intentVersion:"v1", acceptedRevision:"accepted:none", candidateParentRevision:null, candidateVersion:null, source:"", protocol:null, diagnosis:null, evidenceBundle:null, decision:null, log:["已重置；尚无 AI 候选。"] };
+  }
+
+  function legal(state, actionType) {
+    return actionType === "RESET" || (transitions[state.phase] || []).includes(actionType);
+  }
+
+  function reducer(state, action, scenario) {
+    if (action.type === "RESET") return initialState(state.scenarioId);
+    if (!legal(state, action.type)) {
+      return { ...state, log:[...state.log, `拒绝非法转换：${action.type} 不能在 ${state.phase} 阶段执行。`] };
+    }
+    switch (action.type) {
+      case "GENERATE": return { ...state, phase:"generated", candidateParentRevision:state.acceptedRevision, candidateVersion:"v1", source:scenario.generated.source, log:[...state.log,"AI 从当前 accepted revision 生成完整候选 v1；尚未产生任何语义结论。"] };
+      case "CHECK": return { ...state, phase:"checked", protocol:scenario.generated.protocol, log:[...state.log,`Morva 实测完成：exit ${scenario.generated.exitCode}，result=${scenario.generated.protocol.result.status}。`] };
+      case "DIAGNOSE": return { ...state, phase:"diagnosed", diagnosis:scenario.diagnosis, log:[...state.log,"AI 读取结构化 finding/coverage 并形成诊断；原始源码未改变。"] };
+      case "REVISE": return { ...state, phase:"revised", candidateVersion:"v2", source:scenario.revised.source, protocol:null, log:[...state.log,"AI 提交新的完整候选 v2；v1 的检查结果不继承。"] };
+      case "RECHECK": return { ...state, phase:"rechecked", protocol:scenario.revised.protocol, evidenceBundle:{intentIdentity:state.intentIdentity,intentVersion:state.intentVersion,acceptedRevision:state.acceptedRevision,candidateRevision:scenario.revised.protocol.subject.revision.value,candidateParentRevision:state.candidateParentRevision,includesBaseToCandidateDiff:true,checks:["v1","v2"],includesAiRationale:true}, log:[...state.log,`Morva 独立复检 v2：exit ${scenario.revised.exitCode}，result=${scenario.revised.protocol.result.status}。已冻结完整 evidence bundle，等待人工裁决。`] };
+      case "HUMAN_ACCEPT": return decide(state,"accept","人工接受：候选语义与需求一致。",scenario);
+      case "HUMAN_REJECT": return decide(state,"reject","人工拒绝：即使语法/检查有效，候选仍改变或遗漏需求。",scenario);
+      case "HUMAN_BLOCK": return decide(state,"block","人工阻塞：当前语言或证据不足以表达/验证强制需求。",scenario);
+      default: return state;
+    }
+  }
+
+  function decide(state, verdict, summary, scenario) {
+    const stale = !state.evidenceBundle || state.candidateParentRevision !== state.acceptedRevision || state.evidenceBundle.intentIdentity !== state.intentIdentity || state.evidenceBundle.intentVersion !== state.intentVersion;
+    if (stale || (verdict === "accept" && state.protocol?.result.status !== "valid")) {
+      return { ...state, log:[...state.log,"拒绝裁决：证据包缺失、候选无效，或 accepted revision / intent identity / intent version 的 compare-and-swap 失败。"] };
+    }
+    const match = verdict === scenario.recommendedVerdict;
+    return { ...state, phase:"decided", acceptedRevision:verdict==="accept" ? state.evidenceBundle.candidateRevision : state.acceptedRevision, decision:{ verdict, summary, matchesRecommendation:match }, log:[...state.log,`${summary}${match ? " 与样本建议一致。" : " 与样本建议不一致，请复核理由。"}`] };
+  }
+
+  return { initialState, reducer, legal };
+})();
+
+const sourceA1 = `system Fulfillment {
+  enum OrderStatus {
+    Pending
+    Paid
+    Fulfilled
+    Cancelled
+  }
+
+  entity Order {
+    id: ID
+    status: OrderStatus
+  }
+
+  action Fulfill(order: Order) {
+    requires order.status == Paid
+    effects order.status = Fulfiled
+    ensures order.status == Fulfilled
+  }
+}
+`;
+const sourceA2 = sourceA1.replace("Fulfiled", "Fulfilled");
+const sourceB1 = `system RiskReview {
+  enum ReviewStatus {
+    Pending
+    Failed
+    Submitted
+  }
+
+  entity ReviewRequest {
+    id: ID
+    status: ReviewStatus
+    suspended: Boolean
+  }
+
+  action Resubmit(request: ReviewRequest) {
+    requires request.status == Pending or request.status == Failed
+    requires not request.suspended
+    effects request.status = Submitted
+    ensures request.status == Submitted
+  }
+}
+`;
+const sourceB2 = `system RiskReview {
+  enum ReviewStatus {
+    Pending
+    Failed
+    Submitted
+  }
+
+  entity ReviewRequest {
+    id: ID
+    status: ReviewStatus
+    suspended: Boolean
+  }
+
+  action Resubmit(request: ReviewRequest) {
+    requires request.status == Pending
+    requires request.suspended == false
+    effects request.status = Submitted
+    ensures request.status == Submitted
+  }
+}
+`;
+const sourceC1 = `system Payments {
+  module Refunds {
+    enum RefundStatus {
+      Pending
+      Approved
+      Rejected
+    }
+
+    entity Refund {
+      id: ID
+      status: RefundStatus
+    }
+
+    action ApproveRefund(refund: Refund) {
+      atomic
+      retry 3
+      requires refund.status == Pending
+      effects refund.status = Approved
+      ensures refund.status == Approved
+    }
+  }
+}
+`;
+const sourceC2 = `system Payments {
+  enum RefundStatus {
+    Pending
+    Approved
+    Rejected
+  }
+
+  entity Refund {
+    id: ID
+    status: RefundStatus
+  }
+
+  action ApproveRefund(refund: Refund) {
+    /* REVIEW BLOCKER:
+       Atomic execution and at-most-three retries are required by the source
+       requirement but are not represented by Morva v0.1 semantics.
+    */
+    requires refund.status == Pending
+    effects refund.status = Approved
+    ensures refund.status == Approved
+  }
+}
+`;
+
+function envelope(name, source, digest, status, findings, coverageAssessment, fullyModeled, hasModel, declarations=[]) {
+  const sourceId="source:0";
+  return {
+    protocol:"morva.checked-semantics", version:1,
+    capabilities:["morva.sources.inline","morva.locations.byte-range","morva.findings.v1","morva.coverage.v1","morva.checked-model.v1"],
+    producer:{ name:"morva", version:"0.1.0" },
+    subject:{ kind:"file", name, revision:{algorithm:"sha256",value:digest} },
+    sources:[{ source_id:sourceId, name, content_encoding:"utf-8", content:source, revision:{algorithm:"sha256",value:digest} }],
+    result:{ status, findings, coverage:{ assessment:coverageAssessment, fully_modeled:fullyModeled, unmodeled:findings.filter(f=>f.severity === "warning").map(f=>({ ...f.details, location:f.primary_location })) }, checked_model:hasModel ? { language:"morva", language_version:"0.1", system:{ kind:"system", node_id:`node:${sourceId}:0:system`, semantic_key:`system:${name.includes("risk") ? "RiskReview" : name.includes("refund") ? "Payments" : "Fulfillment"}`, name:name.includes("risk") ? "RiskReview" : name.includes("refund") ? "Payments" : "Fulfillment", shell_locations:[{kind:"source",source_id:sourceId,byte_range:{start:0,end:source.length}}], declarations } } : null }
+  };
+}
+const loc = (_name,start,end) => ({ kind:"source", source_id:"source:0", byte_range:{start,end} });
+const findLoc = (source,needle,from=0) => { const start=source.indexOf(needle,from); if(start<0) throw new Error(`missing fixture token: ${needle}`); return loc("",start,start+needle.length); };
+const builtin = name => ({kind:"builtin",name});
+const semanticType = (kind,semantic_key) => ({kind,semantic_key});
+const enumType=semanticType("enum","enum:OrderStatus");
+const orderType=semanticType("entity","entity:Order");
+const enumValue=(member,from) => ({kind:"enum_member",enum_semantic_key:"enum:OrderStatus",member_semantic_key:`enum:OrderStatus.member:${member}`,member,resolved_type:enumType,location:findLoc(sourceA2,member,from)});
+const orderStatusPath=(from) => {
+  const whole=findLoc(sourceA2,"order.status",from);
+  return {kind:"path",root:{kind:"action_parameter",semantic_key:"action:Fulfill.parameter:order"},segments:[
+    {name:"order",resolved_type:orderType,location:loc("",whole.byte_range.start,whole.byte_range.start+5)},
+    {name:"status",resolved_type:enumType,location:loc("",whole.byte_range.start+6,whole.byte_range.end)}
+  ],resolved_type:enumType,location:whole};
+};
+const reqStart=sourceA2.indexOf("requires order.status");
+const effectStart=sourceA2.indexOf("effects order.status");
+const ensureStart=sourceA2.indexOf("ensures order.status");
+const modelADeclarations=[
+  {kind:"enum",node_id:"node:source:0:23:enum",semantic_key:"enum:OrderStatus",name:"OrderStatus",location:findLoc(sourceA2,"enum OrderStatus"),container_path:[],members:["Pending","Paid","Fulfilled","Cancelled"].map(member=>({kind:"enum_member",node_id:`node:source:0:${sourceA2.indexOf(member)}:enum_member`,semantic_key:`enum:OrderStatus.member:${member}`,name:member,location:findLoc(sourceA2,member),enum_semantic_key:"enum:OrderStatus"}))},
+  {kind:"entity",node_id:"node:source:0:99:entity",semantic_key:"entity:Order",name:"Order",location:findLoc(sourceA2,"entity Order"),container_path:[],fields:[
+    {kind:"field",node_id:"node:source:0:120:field",semantic_key:"field:Order.id",name:"id",location:findLoc(sourceA2,"id: ID"),type:builtin("Id")},
+    {kind:"field",node_id:"node:source:0:131:field",semantic_key:"field:Order.status",name:"status",location:findLoc(sourceA2,"status: OrderStatus"),type:enumType}
+  ],invariants:[]},
+  {kind:"action",node_id:"node:source:0:161:action",semantic_key:"action:Fulfill",name:"Fulfill",location:findLoc(sourceA2,"action Fulfill"),container_path:[],parameters:[
+    {kind:"parameter",node_id:"node:source:0:176:parameter",semantic_key:"action:Fulfill.parameter:order",name:"order",location:findLoc(sourceA2,"order: Order"),action_semantic_key:"action:Fulfill",type:orderType}
+  ],clauses:[
+    {kind:"clause",clause_kind:"requires",state_phase:"pre",location:findLoc(sourceA2,"requires order.status == Paid"),expressions:[{kind:"predicate",expression:{kind:"binary",operator:"equal",left:orderStatusPath(reqStart),right:enumValue("Paid",reqStart),resolved_type:builtin("Boolean"),location:findLoc(sourceA2,"order.status == Paid",reqStart)}}]},
+    {kind:"clause",clause_kind:"effects",state_phase:"effect",location:findLoc(sourceA2,"effects order.status = Fulfilled"),expressions:[{kind:"assignment",assignment:{target:orderStatusPath(effectStart),operator:"set",value:enumValue("Fulfilled",effectStart),target_type:enumType,location:findLoc(sourceA2,"order.status = Fulfilled",effectStart)}}]},
+    {kind:"clause",clause_kind:"ensures",state_phase:"post",location:findLoc(sourceA2,"ensures order.status == Fulfilled"),expressions:[{kind:"predicate",expression:{kind:"binary",operator:"equal",left:orderStatusPath(ensureStart),right:enumValue("Fulfilled",ensureStart),resolved_type:builtin("Boolean"),location:findLoc(sourceA2,"order.status == Fulfilled",ensureStart)}}]}
+  ]}
+];
+const scenarios = {
+  a:{
+    title:"A · 精确诊断可修复", description:"枚举成员拼写错误可用同一 provenance 精确修订；复检成功后仍由人确认语义未漂移。",
+    requirement:"只有 Paid 订单可履约；履约后必须为 Fulfilled。",
+    generated:{ source:sourceA1, exitCode:1, protocol:envelope("a-generated-invalid.morva",sourceA1,"0c7d6527cdc212a93b59fcd17a7f5fe79ec9455efa555145844279df387c63d7","invalid",[{finding_id:"finding:0",severity:"error",category:"semantic",code:"MORVA2012",message:"unknown member 'Fulfiled' for enum 'OrderStatus'",primary_location:loc("a-generated-invalid.morva",247,255)}],"complete",true,false) },
+    diagnosis:"`Fulfiled` 不是 OrderStatus 成员；这是不改变业务结构即可修复的局部拼写错误。",
+    revised:{ source:sourceA2, exitCode:0, protocol:envelope("a-revised-valid.morva",sourceA2,"0ac7fe7ca304d24cb63acb23b97d9f06e6798b98449b00024f57039508580e8d","valid",[],"complete",true,true,modelADeclarations) },
+    recommendedVerdict:"accept"
+  },
+  b:{
+    title:"B · check 通过但语义漂移", description:"当前 L0 不支持 OR/NOT。AI 删除 Failed 分支后可通过 check，但人必须拒绝这个“绿色”结果。",
+    requirement:"Pending 或 Failed 且未暂停时，允许同一个 Resubmit 操作。",
+    generated:{ source:sourceB1, exitCode:1, protocol:envelope("b-generated-unsupported.morva",sourceB1,"282fb3e15a29928f2c25f705cfe2aea21ebca09ab6c831b7ca4a1a04156bddd7","invalid",[{finding_id:"finding:0",severity:"error",category:"syntax",code:"MORVA1018",message:"unexpected token after clause expression",primary_location:loc("b-generated-unsupported.morva",256,258)}],"unavailable",null,false) },
+    diagnosis:"OR/NOT 超出 Morva v0.1 表达边界；多条 requires 是 AND，不能模拟 OR。",
+    revised:{ source:sourceB2, exitCode:0, protocol:envelope("b-revised-semantic-drift.morva",sourceB2,"02db1f139b3a36cdfde5ebcee479c7fe7b2f0a567be6ec60a5736791226829b1","valid",[],"complete",true,true) },
+    recommendedVerdict:"reject"
+  },
+  c:{
+    title:"C · warning-only 仍不完整", description:"atomic/retry 和 module 只产生 coverage warning。删除它们可得到无 warning 的候选，却没有证明原始强制需求。",
+    requirement:"退款审批必须原子执行，临时故障最多重试三次，并完成 Pending→Approved。",
+    generated:{ source:sourceC1, exitCode:0, protocol:envelope("c-generated-warning-only.morva",sourceC1,"749fa31d16e6723fe7b1ced6dae306b0b8d14b37953d585a14255a7682898349","valid",[
+      {finding_id:"finding:0",severity:"warning",category:"coverage",code:"MORVA5001",message:"compatibility module 'Refunds' is parsed but not semantically validated",primary_location:loc("c-generated-warning-only.morva",27,34),details:{kind:"compatibility_container",container_kind:"module",name:"Refunds"}},
+      {finding_id:"finding:1",severity:"warning",category:"coverage",code:"MORVA5002",message:"soft behavior 'atomic' is not semantically validated",primary_location:loc("c-generated-warning-only.morva",228,234),details:{kind:"action_soft_behavior",action:"ApproveRefund",behavior:"atomic"}},
+      {finding_id:"finding:2",severity:"warning",category:"coverage",code:"MORVA5002",message:"soft behavior 'retry' is not semantically validated",primary_location:loc("c-generated-warning-only.morva",241,246),details:{kind:"action_soft_behavior",action:"ApproveRefund",behavior:"retry"}}
+    ],"complete",false,true) },
+    diagnosis:"状态转换已检查，但 atomic 与 retry 3 没有语义；成功退出不能升级覆盖程度。",
+    revised:{ source:sourceC2, exitCode:0, protocol:envelope("c-revised-still-blocked.morva",sourceC2,"50ea3ea236a7463b3420d31e09850b845125483a6b15a5162fb5ca8845b004d3","valid",[],"complete",true,true) },
+    recommendedVerdict:"block"
+  }
+};
+
+const actionLabels = { GENERATE:"AI 生成 v1", CHECK:"Morva 检查 v1", DIAGNOSE:"AI 诊断", REVISE:"AI 生成 v2", RECHECK:"Morva 复检 v2", HUMAN_ACCEPT:"人工接受", HUMAN_REJECT:"人工拒绝", HUMAN_BLOCK:"人工阻塞", RESET:"重置" };
+const guided = ["GENERATE","CHECK","DIAGNOSE","REVISE","RECHECK"];
+let state = LoopModel.initialState("a");
+
+function dispatch(type) { state = LoopModel.reducer(state,{type},scenarios[state.scenarioId]); render(); }
+function selectScenario(id) { state = LoopModel.initialState(id); render(); }
+function escapeHtml(value) { return String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+function render() {
+  const s=scenarios[state.scenarioId];
+  document.querySelector("#tabs").innerHTML=Object.entries(scenarios).map(([id,x])=>`<button class="${id===state.scenarioId?"active":""}" onclick="selectScenario('${id}')">${escapeHtml(x.title)}</button>`).join("");
+  const verdict=state.decision?.verdict || "—";
+  document.querySelector("#facts").innerHTML=[
+    ["样本",s.title],["当前阶段",`<span class="phase">${state.phase}</span>`],["原始需求",s.requirement],["需求身份",state.intentIdentity],["需求版本",state.intentVersion],["Accepted revision",state.acceptedRevision],["候选 parent",state.candidateParentRevision||"—"],["候选版本",state.candidateVersion||"—"],["协议结果",state.protocol?.result.status||"—"],["语义覆盖",state.protocol ? (state.protocol.result.coverage.fully_modeled?"fully_modeled":"存在 coverage gap / unavailable") : "—"],["checked_model",state.protocol ? (state.protocol.result.checked_model===null?"null（禁止消费）":"存在（仅表示 Morva check 有效）") : "—"],["评审证据包",state.evidenceBundle?"完整且已绑定 revision + intent":"—"],["人工裁决",`<span class="verdict-${verdict}">${verdict}</span>`]
+  ].map(([k,v])=>`<dt>${escapeHtml(k)}</dt><dd>${v}</dd>`).join("");
+  const all=["GENERATE","CHECK","DIAGNOSE","REVISE","RECHECK","HUMAN_ACCEPT","HUMAN_REJECT","HUMAN_BLOCK","RESET"];
+  document.querySelector("#actions").innerHTML=all.map(type=>`<button ${LoopModel.legal(state,type)?"":"disabled"} onclick="dispatch('${type}')">${actionLabels[type]}</button>`).join("");
+  document.querySelector("#scenario-description").textContent=s.description;
+  const recommendation={accept:"HUMAN_ACCEPT",reject:"HUMAN_REJECT",block:"HUMAN_BLOCK"}[s.recommendedVerdict];
+  const steps=[...guided,recommendation];
+  const phaseIndex={empty:0,generated:1,checked:2,diagnosed:3,revised:4,rechecked:5,decided:6}[state.phase];
+  document.querySelector("#guided-steps").innerHTML=steps.map((type,i)=>`<li class="${i<phaseIndex?"step-done":""}"><button class="${i===phaseIndex?"primary":""}" ${i===phaseIndex?"":"disabled"} onclick="dispatch('${type}')">${actionLabels[type]}</button>${i<phaseIndex?" 已完成":""}</li>`).join("");
+  document.querySelector("#source").textContent=state.source||"尚无候选源码。";
+  document.querySelector("#protocol").textContent=state.protocol?JSON.stringify(state.protocol,null,2):"尚无协议快照。协议只由 Morva check 产生。";
+  const findings=state.protocol?.result.findings||[];
+  document.querySelector("#reasoning").innerHTML=`${state.diagnosis?`<p><strong>AI 诊断：</strong>${escapeHtml(state.diagnosis)}</p>`:"<p class='muted'>尚未诊断。</p>"}${findings.map(f=>`<div class="finding ${f.severity==='warning'?'warning':''}"><strong>${escapeHtml(f.severity)}[${escapeHtml(f.code)}]</strong><br>${escapeHtml(f.message)}</div>`).join("")}${state.decision?`<p><strong>人工决定：</strong>${escapeHtml(state.decision.summary)}</p>`:""}<p><strong>样本建议：</strong>${escapeHtml(s.recommendedVerdict)}</p>`;
+  document.querySelector("#log").innerHTML=state.log.map(x=>`<li>${escapeHtml(x)}</li>`).join("");
+}
+render();
+</script>
+</body>
+</html>

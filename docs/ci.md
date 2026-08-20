@@ -1,6 +1,6 @@
 # CI 质量门禁
 
-Morva 已在本地提交中配置 GitHub Actions 的 [Test Pipeline](../.github/workflows/test.yml)，用于验证 `main` push、pull request、手动运行和每周定时运行。截至 2026-08-10 本次核对，该提交尚未推送，工作流尚未由 GitHub 托管运行，`Quality gate` 也尚未设为 branch protection 必需检查；推送或配置保护规则后必须同步更新本节。工作流只需要仓库读权限，不使用 secret、外部服务或部署凭据。
+Morva 使用 GitHub Actions 的 [Test Pipeline](../.github/workflows/test.yml) 验证 `main` push、pull request、手动运行和每周定时运行。截至 2026-08-12 本次核对，工作流已推送并由 GitHub 托管运行成功，最近一次为 `main` 分支 commit `bc81fac`（2026-08-11）；`Quality gate` 仍**未**设为 branch protection 必需检查（`gh api repos/.../branches/main/protection` 返回 `Branch not protected`，rulesets 为空）。配置保护规则后必须同步更新本节。工作流只需要仓库读权限，不使用 secret、外部服务或部署凭据。
 
 ## 门禁结构
 
@@ -30,4 +30,4 @@ cargo run --locked -p morva-cli -- inspect examples/order-project
 cargo run --locked -p morva-cli -- simulate examples/order-project NormalConfirmation
 ```
 
-CI 运行过一次后，应在 GitHub branch protection 中把 `Quality gate` 设为必需检查。工作流固定 `actions/checkout` 的 commit SHA；升级时应同时更新 SHA 与版本注释。
+托管运行的前置条件已满足，应在 GitHub branch protection 中把 `Quality gate` 设为必需检查；该操作属于远程仓库设置变更，需人工执行并回写本文。工作流固定 `actions/checkout` 的 commit SHA；升级时应同时更新 SHA 与版本注释。

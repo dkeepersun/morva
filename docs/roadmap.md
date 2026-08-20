@@ -30,6 +30,8 @@ These are directions, not commitments for v0.1. Formal verification and implemen
 
 ## Repository quality gate
 
-The GitHub Actions workflow is configured in local commits but has not yet been pushed
-or run by GitHub. `Quality gate` must only become a required branch-protection check
-after the workflow is available remotely and has completed at least one hosted run.
+The GitHub Actions workflow is pushed and has completed hosted runs; the most recent
+verified success is `main` commit `bc81fac` (2026-08-11). The stated precondition for
+making `Quality gate` a required branch-protection check is therefore satisfied, but the
+check is not yet required — enabling it is a remote repository settings change that must
+be performed and recorded manually.

@@ -1,0 +1,20 @@
+system RiskReview {
+  enum ReviewStatus {
+    Pending
+    Failed
+    Submitted
+  }
+
+  entity ReviewRequest {
+    id: ID
+    status: ReviewStatus
+    suspended: Boolean
+  }
+
+  action Resubmit(request: ReviewRequest) {
+    requires request.status == Pending or request.status == Failed
+    requires not request.suspended
+    effects request.status = Submitted
+    ensures request.status == Submitted
+  }
+}

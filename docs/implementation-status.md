@@ -14,7 +14,7 @@
 - Scenario 结构、action 选择、arity、entity 参数绑定和 given 值检查。
 - `check`、`parse`、`inspect`、`simulate` CLI 与稳定退出码。
 - 四个命令接受单文件或平铺项目目录；core 以同名 system 装配跨文件声明，用 source map 将语法、语义和模拟失败定位回原文件本地 span。
-- GitHub Actions 质量门禁已在本地提交中配置：格式、严格 Clippy、职责分片测试、四命令示例与最终汇总检查。该提交尚未推送，因此远程 GitHub Actions 尚未运行，`Quality gate` 也尚未设为 branch protection 必需检查。
+- GitHub Actions 质量门禁：格式、严格 Clippy、职责分片测试、四命令示例与最终汇总检查。工作流已推送并由 GitHub 托管运行成功（最近核对为 `bc81fac`，2026-08-11）；`Quality gate` 尚未设为 branch protection 必需检查。
 - 单 action、纯内存、enum/Boolean/Integer 状态模拟及七个阶段。
 - 自动化测试覆盖 core 语法、语义、模拟公开 API、runtime guard 与 CLI 进程级契约；当前总数以 `cargo test --workspace --locked` 的实际结果为准。
 - LF、CRLF、CR 统一作为单个逻辑换行；注释、parser 分隔、原源 byte span 与 CLI 混合换行行列保持一致。
