@@ -85,7 +85,7 @@ action_items:
   - epic: 2
     action: "修正文档中 CI、托管运行与完成状态的事实漂移"
     owner: "alex"
-    status: open
+    status: done # 2026-08-26 核对：docs 中不再存在“CI 未推送/无 hosted run”类漂移表述
   - epic: 2
     action: "事实审查并冻结语言演进策略，移除未经证明的 SAT、复杂度和覆盖率结论"
     owner: "alex"
@@ -93,7 +93,7 @@ action_items:
   - epic: 2
     action: "基于实际构建证据定义 Rust 工具链固定与 MSRV 策略"
     owner: "alex"
-    status: open
+    status: done # 2026-08-26：rust-toolchain.toml 钉 1.95.0；rust-version=1.85，158 测试在 1.85.0 全过
   - epic: 2
     action: "在远程仓库启用并验证 main branch protection 与必需质量门禁"
     owner: "alex"

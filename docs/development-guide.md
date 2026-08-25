@@ -2,7 +2,7 @@
 
 ## 前置条件
 
-- 支持 Rust 2024 edition 的稳定 Rust toolchain。
+- 支持 Rust 2024 edition 的稳定 Rust toolchain。仓库根 `rust-toolchain.toml` 把质量门禁钉在一个具体版本（rustup 环境自动采用）；workspace `rust-version = "1.85"` 是经完整测试套件验证的 MSRV。升级钉住版本前须先在新版本上本地跑通 fmt、严格 Clippy 与全部测试，并在同一提交中更新钉住文件。
 - Cargo。
 - 不需要数据库、服务账号、环境变量或网络依赖。
 

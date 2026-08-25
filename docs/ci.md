@@ -12,6 +12,8 @@ Morva 使用 GitHub Actions 的 [Test Pipeline](../.github/workflows/test.yml) �
 
 项目使用 Rust 内建 test harness，当前不产生 JUnit/HTML 报告，因此不上传空 artifact。失败证据保留在具名 matrix job 日志和最终 summary 中。不配置自动重试；burn-in 的每次失败都直接失败，避免掩盖真实问题。
 
+所有 job 通过 `rustup toolchain install`（无参数）安装仓库根 `rust-toolchain.toml` 钉住的具体版本及 rustfmt/clippy 组件，因此新发布的 stable 不会在无人改动代码时让严格 Clippy 门禁变红；工具链升级是一次显式的、先本地验证再提交的变更。workspace 声明 `rust-version = "1.85"`（MSRV），其证据是完整测试套件在 1.85.0 上通过（2026-08-26 本地核对）。
+
 ## 本地对齐
 
 提交前执行：

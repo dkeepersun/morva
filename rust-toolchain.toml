@@ -1,0 +1,7 @@
+# Pin the exact toolchain the quality gate runs on so a new stable release
+# cannot turn the strict Clippy gate red without a reviewed upgrade commit.
+# Upgrade by editing this version after fmt/Clippy/tests pass on it locally.
+[toolchain]
+channel = "1.95.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

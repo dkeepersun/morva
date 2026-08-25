@@ -26,10 +26,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Install stable Rust with lint components
-        run: |
-          rustup toolchain install stable --profile minimal --component rustfmt,clippy
-          rustup default stable
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Run strict Clippy
@@ -45,10 +43,8 @@ jobs:
         suite: [core-language, core-simulation, cli-process]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Install stable Rust
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
       - name: Run test shard
         env:
           TEST_SUITE: ${{ matrix.suite }}
@@ -77,10 +73,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Install stable Rust
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
       - name: Run documented command loop
         run: |
           cargo run --locked -p morva-cli -- check examples/order.morva
@@ -99,10 +93,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Install stable Rust
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
       - name: Run workspace tests three times
         run: |
           for iteration in 1 2 3; do
