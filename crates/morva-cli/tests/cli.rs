@@ -1389,3 +1389,65 @@ fn json_check_uses_a_machine_error_envelope_for_input_and_usage_errors() {
         "unrecognized format stays human"
     );
 }
+
+#[test]
+fn json_parse_emits_the_structured_ast_with_recursive_boolean_nodes() {
+    let path = temporary_model(
+        "json-ast",
+        b"system Shop {\r\n  // comment\r\n  entity Order { vip: Boolean\r\n    paid: Boolean }\r\n  module Compat {}\r\n  action Ship(order: Order) {\r\n    requires !order.paid || order.vip\r\n    implementation_hint { secret body }\r\n  }\r\n}\r\n",
+    );
+    let path_text = path.to_str().expect("UTF-8 path").to_owned();
+    let first = morva(&["parse", "--format", "json", &path_text]);
+    let second = morva(&["parse", "--format", "json", &path_text]);
+    fs::remove_file(&path).expect("remove fixture");
+    assert!(first.status.success(), "{}", text(&first.stderr));
+    assert!(first.stderr.is_empty());
+    assert_eq!(first.stdout, second.stdout, "byte-identical repeats");
+    let stdout = text(&first.stdout);
+    assert!(stdout.contains("\"command\": \"parse\""));
+    assert!(stdout.contains("\"kind\": \"or\""));
+    assert!(stdout.contains("\"kind\": \"not\""));
+    assert!(stdout.contains("\"kind\": \"container\""));
+    assert!(stdout.contains("\"container_kind\": \"module\""));
+    assert!(stdout.contains("\"behavior\": \"implementation_hint\""));
+    assert!(
+        !stdout.contains("secret body"),
+        "skipped compatibility text is never echoed"
+    );
+    assert!(!stdout.contains("Debug"));
+}
+
+#[test]
+fn json_parse_marks_the_merged_project_system_as_synthetic() {
+    let project = temporary_project("json-ast-project");
+    write_project_source(
+        &project,
+        "10-types.morva",
+        b"system Shop {\n  entity Order { open: Boolean }\n}\n",
+    );
+    write_project_source(
+        &project,
+        "20-actions.morva",
+        b"system Shop {\n  action Close(order: Order) {\n    requires order.open\n  }\n}\n",
+    );
+    let output = morva(&["parse", "--format", "json", project.to_str().unwrap()]);
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    let stdout = text(&output.stdout);
+    assert!(
+        stdout.contains("\"kind\": \"system\",\n    \"name\": \"Shop\",\n    \"location\": null")
+    );
+    assert!(stdout.contains("10-types.morva\""));
+    assert!(stdout.contains("20-actions.morva\""));
+    assert!(!stdout.contains("virtual"));
+
+    let broken = temporary_project("json-ast-error");
+    write_project_source(
+        &broken,
+        "10-bad.morva",
+        b"system Shop {\n  action A(x Order) {}\n}\n",
+    );
+    let output = morva(&["parse", "--format", "json", broken.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stderr.is_empty());
+    assert!(text(&output.stdout).contains("\"severity\": \"error\""));
+}

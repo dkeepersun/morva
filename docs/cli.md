@@ -63,8 +63,8 @@ Invalid input diagnostics include a stable code, line and column, and a source m
 
 ## Machine output
 
-`check` accepts `--format json`. Machine output writes exactly one versioned
-JSON envelope to stdout and nothing to stderr:
+`check` and `parse` accept `--format json`. Machine output writes exactly one
+versioned JSON envelope to stdout and nothing to stderr:
 
 ```json
 { "protocol": "morva.cli", "schema_version": 1, "command": "check", "success": true, "diagnostics": [] }
@@ -82,6 +82,16 @@ or environment noise — and JSON escaping keeps control characters out of the
 terminal. `schema_version` only changes with a reviewed incompatible protocol
 change. Without `--format json` every command keeps its existing human output
 and exit codes.
+
+`parse --format json` embeds the structured AST as an `ast` member: every node
+uses an explicit stable `kind` with semantic fields (declarations, members,
+fields with written type names, parameters, soft behavior kinds, clauses, and
+recursive `binary`/`not`/`or` expression nodes), and every location carries the
+real source path with its file-local span. The merged multi-file system shell
+is synthetic and reports `location: null` instead of impersonating one file.
+Skipped compatibility and implementation-hint bodies are never echoed. The AST
+JSON is a read-only structured view; it is not a lossless serialization of the
+original `.morva` source.
 
 ## Planned, not implemented
 

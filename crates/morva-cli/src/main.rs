@@ -53,6 +53,7 @@ fn main() -> ExitCode {
             run_simulation(path, scenario)
         }
         ([command, path], OutputFormat::Json) if command == "check" => run_check_json(path),
+        ([command, path], OutputFormat::Json) if command == "parse" => run_parse_json(path),
         (rest, OutputFormat::Json) => {
             let command = rest.first().map(String::as_str).unwrap_or("");
             machine_error(command, "usage", "unsupported machine command or arguments")
@@ -1316,6 +1317,386 @@ fn print_capabilities() {
 
 fn help() {
     println!(
-        "Morva semantic model tools\n\nUsage:\n  morva check [--format json] <file-or-directory>\n  morva parse <file-or-directory>\n  morva inspect <file-or-directory>\n  morva simulate <file-or-directory> <scenario>\n  morva capabilities\n  morva help"
+        "Morva semantic model tools\n\nUsage:\n  morva check [--format json] <file-or-directory>\n  morva parse [--format json] <file-or-directory>\n  morva inspect <file-or-directory>\n  morva simulate <file-or-directory> <scenario>\n  morva capabilities\n  morva help"
     );
+}
+
+enum Locator<'a> {
+    Single {
+        path: String,
+        source: &'a str,
+    },
+    Project {
+        sources: &'a [CliSource],
+        project: &'a Project,
+    },
+}
+
+impl Locator<'_> {
+    fn location(&self, span: Span) -> Json {
+        match self {
+            Self::Single { path, source } => {
+                let (line, column, _) = location(source, span.start);
+                location_json(path, line, column, span)
+            }
+            Self::Project { sources, project } => {
+                let local = project
+                    .locate_virtual_span(span)
+                    .expect("assembled AST span maps to a source");
+                let source = &sources[local.source_id.0];
+                let (line, column, _) = location(&source.source, local.local_span.start);
+                location_json(
+                    &source.path.to_string_lossy(),
+                    line,
+                    column,
+                    local.local_span,
+                )
+            }
+        }
+    }
+}
+
+fn location_json(path: &str, line: usize, column: usize, span: Span) -> Json {
+    Json::Object(vec![
+        ("source", Json::string(path)),
+        ("line", Json::UInt(line as u64)),
+        ("column", Json::UInt(column as u64)),
+        (
+            "span",
+            Json::Object(vec![
+                ("start", Json::UInt(span.start as u64)),
+                ("end", Json::UInt(span.end as u64)),
+            ]),
+        ),
+    ])
+}
+
+fn run_parse_json(path: &str) -> ExitCode {
+    let model = match load_checked_model(path) {
+        Ok(model) => model,
+        Err(failure) => return load_failure_machine("parse", failure),
+    };
+    let (locator, system_location) = match &model {
+        LoadedModel::Single { source, document } => {
+            let locator = Locator::Single {
+                path: source.path.to_string_lossy().into_owned(),
+                source: &source.source,
+            };
+            let system_span = document
+                .declarations
+                .iter()
+                .find_map(|declaration| match declaration {
+                    Declaration::System(system) => Some(system.span),
+                    _ => None,
+                })
+                .expect("checked document has one system");
+            let system_location = locator.location(system_span);
+            (locator, system_location)
+        }
+        LoadedModel::Project { sources, project } => (
+            Locator::Project { sources, project },
+            // The merged system shell is synthetic; it never claims one
+            // real source location.
+            Json::Null,
+        ),
+    };
+    let document = model.document();
+    let system = document
+        .declarations
+        .iter()
+        .find_map(|declaration| match declaration {
+            Declaration::System(system) => Some(system),
+            _ => None,
+        })
+        .expect("checked document has one system");
+    let ast = Json::Object(vec![
+        ("kind", Json::string("system")),
+        ("name", Json::string(&system.name.text)),
+        ("location", system_location),
+        (
+            "declarations",
+            Json::Array(
+                system
+                    .declarations
+                    .iter()
+                    .map(|declaration| ast_declaration_json(declaration, &locator))
+                    .collect(),
+            ),
+        ),
+    ]);
+    emit_machine(&machine_envelope("parse", true, vec![("ast", ast)]));
+    ExitCode::SUCCESS
+}
+
+fn ast_declaration_json(declaration: &Declaration, locator: &Locator<'_>) -> Json {
+    match declaration {
+        Declaration::System(system) => Json::Object(vec![
+            ("kind", Json::string("system")),
+            ("name", Json::string(&system.name.text)),
+            ("location", locator.location(system.name.span)),
+        ]),
+        Declaration::Container(container) => Json::Object(vec![
+            ("kind", Json::string("container")),
+            ("container_kind", Json::string(&container.kind)),
+            ("name", Json::string(&container.name.text)),
+            ("location", locator.location(container.name.span)),
+            (
+                "declarations",
+                Json::Array(
+                    container
+                        .declarations
+                        .iter()
+                        .map(|declaration| ast_declaration_json(declaration, locator))
+                        .collect(),
+                ),
+            ),
+        ]),
+        Declaration::Enum(enumeration) => Json::Object(vec![
+            ("kind", Json::string("enum")),
+            ("name", Json::string(&enumeration.name.text)),
+            ("location", locator.location(enumeration.span)),
+            (
+                "members",
+                Json::Array(
+                    enumeration
+                        .members
+                        .iter()
+                        .map(|member| {
+                            Json::Object(vec![
+                                ("name", Json::string(&member.text)),
+                                ("location", locator.location(member.span)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+        ]),
+        Declaration::Entity(entity) => Json::Object(vec![
+            ("kind", Json::string("entity")),
+            ("name", Json::string(&entity.name.text)),
+            ("location", locator.location(entity.span)),
+            (
+                "fields",
+                Json::Array(
+                    entity
+                        .fields
+                        .iter()
+                        .map(|field| {
+                            Json::Object(vec![
+                                ("name", Json::string(&field.name.text)),
+                                ("type", Json::string(&field.type_name.text)),
+                                ("location", locator.location(field.span)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+            (
+                "invariants",
+                Json::Array(
+                    entity
+                        .invariants
+                        .iter()
+                        .map(|invariant| ast_expression_json(invariant, locator))
+                        .collect(),
+                ),
+            ),
+        ]),
+        Declaration::Action(action) => Json::Object(vec![
+            ("kind", Json::string("action")),
+            ("name", Json::string(&action.name.text)),
+            ("location", locator.location(action.span)),
+            (
+                "parameters",
+                Json::Array(
+                    action
+                        .parameters
+                        .iter()
+                        .map(|parameter| {
+                            Json::Object(vec![
+                                ("name", Json::string(&parameter.name.text)),
+                                ("type", Json::string(&parameter.type_name.text)),
+                                ("location", locator.location(parameter.span)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+            (
+                "soft_behaviors",
+                Json::Array(
+                    action
+                        .soft_behaviors
+                        .iter()
+                        .map(|behavior| {
+                            Json::Object(vec![
+                                ("behavior", Json::string(behavior.kind.as_str())),
+                                ("location", locator.location(behavior.span)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+            (
+                "clauses",
+                Json::Array(
+                    action
+                        .clauses
+                        .iter()
+                        .map(|clause| {
+                            Json::Object(vec![
+                                ("kind", Json::string("clause")),
+                                ("clause_kind", Json::string(clause.kind.as_str())),
+                                (
+                                    "expressions",
+                                    Json::Array(
+                                        clause
+                                            .expressions
+                                            .iter()
+                                            .map(|expression| match expression {
+                                                ClauseExpression::Predicate(predicate) => {
+                                                    Json::Object(vec![
+                                                        ("kind", Json::string("predicate")),
+                                                        (
+                                                            "expression",
+                                                            ast_expression_json(predicate, locator),
+                                                        ),
+                                                    ])
+                                                }
+                                                ClauseExpression::Assignment(assignment) => {
+                                                    Json::Object(vec![
+                                                        ("kind", Json::string("assignment")),
+                                                        (
+                                                            "assignment",
+                                                            ast_assignment_json(
+                                                                assignment, locator,
+                                                            ),
+                                                        ),
+                                                    ])
+                                                }
+                                            })
+                                            .collect(),
+                                    ),
+                                ),
+                                ("location", locator.location(clause.span)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+        ]),
+        Declaration::Scenario(scenario) => Json::Object(vec![
+            ("kind", Json::string("scenario")),
+            ("name", Json::string(&scenario.name.text)),
+            ("location", locator.location(scenario.span)),
+            (
+                "items",
+                Json::Array(
+                    scenario
+                        .items
+                        .iter()
+                        .map(|item| match item {
+                            ScenarioItem::Given(assignment) => Json::Object(vec![
+                                ("kind", Json::string("given")),
+                                ("assignment", ast_assignment_json(assignment, locator)),
+                                ("location", locator.location(assignment.span)),
+                            ]),
+                            ScenarioItem::Run(run) => Json::Object(vec![
+                                ("kind", Json::string("run")),
+                                ("action", Json::string(&run.action.text)),
+                                (
+                                    "arguments",
+                                    Json::Array(
+                                        run.arguments
+                                            .iter()
+                                            .map(|argument| {
+                                                Json::Object(vec![
+                                                    ("name", Json::string(&argument.text)),
+                                                    ("location", locator.location(argument.span)),
+                                                ])
+                                            })
+                                            .collect(),
+                                    ),
+                                ),
+                                ("location", locator.location(run.span)),
+                            ]),
+                            ScenarioItem::Expect(expression) => Json::Object(vec![
+                                ("kind", Json::string("expect")),
+                                ("expression", ast_expression_json(expression, locator)),
+                                ("location", locator.location(expression.span)),
+                            ]),
+                        })
+                        .collect(),
+                ),
+            ),
+        ]),
+    }
+}
+
+fn ast_assignment_json(assignment: &morva_core::Assignment, locator: &Locator<'_>) -> Json {
+    Json::Object(vec![
+        ("target", ast_path_json(&assignment.target, locator)),
+        ("operator", Json::string(assignment.operator.as_str())),
+        ("value", ast_expression_json(&assignment.value, locator)),
+        ("location", locator.location(assignment.span)),
+    ])
+}
+
+fn ast_path_json(path: &morva_core::Path, locator: &Locator<'_>) -> Json {
+    Json::Object(vec![
+        ("kind", Json::string("path")),
+        (
+            "segments",
+            Json::Array(
+                path.segments
+                    .iter()
+                    .map(|segment| {
+                        Json::Object(vec![
+                            ("name", Json::string(&segment.text)),
+                            ("location", locator.location(segment.span)),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
+        ("location", locator.location(path.span)),
+    ])
+}
+
+fn ast_expression_json(expression: &Expr, locator: &Locator<'_>) -> Json {
+    match &expression.kind {
+        ExprKind::Integer(value) => Json::Object(vec![
+            ("kind", Json::string("integer")),
+            ("value", Json::string(&value.to_string())),
+            ("location", locator.location(expression.span)),
+        ]),
+        ExprKind::Boolean(value) => Json::Object(vec![
+            ("kind", Json::string("boolean")),
+            ("value", Json::Bool(*value)),
+            ("location", locator.location(expression.span)),
+        ]),
+        ExprKind::Path(path) => ast_path_json(path, locator),
+        ExprKind::Binary {
+            left,
+            operator,
+            right,
+        } => Json::Object(vec![
+            ("kind", Json::string("binary")),
+            ("operator", Json::string(operator.as_str())),
+            ("left", ast_expression_json(left, locator)),
+            ("right", ast_expression_json(right, locator)),
+            ("location", locator.location(expression.span)),
+        ]),
+        ExprKind::Not(operand) => Json::Object(vec![
+            ("kind", Json::string("not")),
+            ("operand", ast_expression_json(operand, locator)),
+            ("location", locator.location(expression.span)),
+        ]),
+        ExprKind::Or { left, right } => Json::Object(vec![
+            ("kind", Json::string("or")),
+            ("left", ast_expression_json(left, locator)),
+            ("right", ast_expression_json(right, locator)),
+            ("location", locator.location(expression.span)),
+        ]),
+    }
 }
