@@ -1239,7 +1239,7 @@ fn capabilities_prints_the_stable_inventory_without_reading_models() {
     assert!(stdout.starts_with("capabilities: v1\n"));
     assert!(stdout.contains("\ndeclarations: system, entity, enum, action, scenario\n"));
     assert!(stdout.contains(
-        "\nexpression forms: path reference, Integer literal, Boolean literal, binary comparison, Boolean negation, grouped predicate\n"
+        "\nexpression forms: path reference, Integer literal, Boolean literal, binary comparison, Boolean negation, grouped predicate, Boolean disjunction (left-associative, short-circuit)\n"
     ));
     assert!(stdout.contains("\ncomparison operators: ==, !=, >, >=, <, <=\n"));
     assert!(stdout.contains("\nassignment operators: =, +=, -=\n"));
@@ -1273,4 +1273,18 @@ fn parse_renders_negated_and_grouped_predicates() {
     let stdout = text(&output.stdout);
     assert!(stdout.contains("requires !order.paid"));
     assert!(stdout.contains("ensures !(order.paid == true)"));
+}
+
+#[test]
+fn parse_renders_disjunction_predicates() {
+    let path = temporary_model(
+        "disjunction",
+        b"system Shop {\n  entity Order { vip: Boolean\n    paid: Boolean }\n  action Ship(order: Order) {\n    requires order.vip || order.paid\n    ensures !(order.vip || order.paid)\n  }\n}\n",
+    );
+    let output = morva(&["parse", path.to_str().expect("UTF-8 path")]);
+    fs::remove_file(path).expect("remove fixture");
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    let stdout = text(&output.stdout);
+    assert!(stdout.contains("requires order.vip || order.paid"));
+    assert!(stdout.contains("ensures !(order.vip || order.paid)"));
 }

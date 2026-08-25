@@ -824,11 +824,14 @@ fn format_expr(expression: &Expr) -> String {
             )
         }
         ExprKind::Not(operand) => {
-            if matches!(operand.kind, ExprKind::Binary { .. }) {
+            if matches!(operand.kind, ExprKind::Binary { .. } | ExprKind::Or { .. }) {
                 format!("!({})", format_expr(operand))
             } else {
                 format!("!{}", format_expr(operand))
             }
+        }
+        ExprKind::Or { left, right } => {
+            format!("{} || {}", format_expr(left), format_expr(right))
         }
     }
 }

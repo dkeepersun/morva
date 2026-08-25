@@ -442,9 +442,26 @@ impl Parser {
     }
 
     fn expression(&mut self) -> Result<Expr, Vec<Diagnostic>> {
+        let mut left = self.unary()?;
+        while self.at_operator("||") {
+            self.bump();
+            let right = self.unary()?;
+            let span = Span::covering(left.span, right.span);
+            left = Expr {
+                kind: ExprKind::Or {
+                    left: Box::new(left),
+                    right: Box::new(right),
+                },
+                span,
+            };
+        }
+        Ok(left)
+    }
+
+    fn unary(&mut self) -> Result<Expr, Vec<Diagnostic>> {
         if self.at_symbol('!') {
             let operator_span = self.bump().span;
-            let operand = self.expression()?;
+            let operand = self.unary()?;
             let span = Span::covering(operator_span, operand.span);
             return Ok(Expr {
                 kind: ExprKind::Not(Box::new(operand)),

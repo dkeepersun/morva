@@ -131,11 +131,12 @@ left < right
 left <= right
 !predicate
 (predicate)
+left || right
 ```
 
-比较的两个操作数仍限于字面量与路径（不递归）。谓词层递归组合仅限取反与括号：比较先构成 Boolean proposition，随后 `!` 取反——`!order.status == Pending` 等价于 `!(order.status == Pending)`；括号把内部内容作为一个完整 Boolean predicate，多余但平衡的嵌套括号不改变结果；连续 `!` 允许任意深度。`!` 只作为谓词取反操作符，`!=` 的词法与语义完全不变。空括号报 `MORVA1013`，未闭合括号报 `MORVA1026`。没有析取、算术表达式、字符串字面量、调用表达式或集合；不要根据未来预期自行扩展 grammar。
+比较的两个操作数仍限于字面量与路径（不递归）。谓词层递归组合限于取反、括号与析取，优先级从高到低为：比较 > `!` > `||`——`!order.status == Pending` 等价于 `!(order.status == Pending)`，`!a || b` 等价于 `(!a) || b`；连续 `||` 左结合。括号把内部内容作为一个完整 Boolean predicate，可覆盖默认优先级，多余但平衡的嵌套括号不改变结果；连续 `!` 允许任意深度。`!` 只作为谓词取反操作符，`!=` 的词法与语义完全不变；单个 `|` 不是操作符，注释不能把 `||` 拆成两半（`MORVA1025`）。空括号报 `MORVA1013`，未闭合括号报 `MORVA1026`。没有 `&&`（合取用多条子句表达）、算术表达式、字符串字面量、调用表达式或集合；不要根据未来预期自行扩展 grammar。
 
-谓词必须产生 Boolean，`!` 的操作数同样必须产生 Boolean（否则 `MORVA2013`）。`==/!=` 要求两侧是同一 canonical 标量或同一 enum；`<`、`<=`、`>`、`>=` 只接受 Integer 或 Decimal。非负 Integer 字面量在明确的 Decimal 比较或赋值上下文中是精确 Decimal 常量，例如 `balance >= 0` 和 `effects account.balance = 0` 合法；Integer 路径与 Decimal 路径之间没有隐式转换。Entity 只能作为字段路径中间类型，不能整体比较或赋值。
+谓词必须产生 Boolean，`!` 的操作数与 `||` 的两侧同样必须各自产生 Boolean（否则 `MORVA2013`）；即使左侧是常量 `true`，右侧仍会被完整静态检查。模拟时 `||` 从左到右确定短路求值：左侧为 `true` 时不读取右侧运行时状态，左侧为 `false` 时右侧未初始化读取按原契约失败并指向真正被求值的右侧路径。`==/!=` 要求两侧是同一 canonical 标量或同一 enum；`<`、`<=`、`>`、`>=` 只接受 Integer 或 Decimal。非负 Integer 字面量在明确的 Decimal 比较或赋值上下文中是精确 Decimal 常量，例如 `balance >= 0` 和 `effects account.balance = 0` 合法；Integer 路径与 Decimal 路径之间没有隐式转换。Entity 只能作为字段路径中间类型，不能整体比较或赋值。
 
 ### 明显矛盾检查
 

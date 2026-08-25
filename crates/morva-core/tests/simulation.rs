@@ -602,3 +602,90 @@ fn negation_preserves_the_uninitialized_read_contract() {
         "failure span points at the responsible path, not the negation"
     );
 }
+
+#[test]
+fn disjunction_short_circuits_left_to_right() {
+    // Left true: the uninitialized right path is never read.
+    let source = r#"system Shop {
+  entity Order {
+    vip: Boolean
+    paid: Boolean
+  }
+  action Ship(order: Order) {
+    requires order.vip || order.paid
+    effects order.vip = true
+  }
+  scenario VipOnly {
+    given order.vip = true
+    run Ship(order)
+    expect order.vip
+  }
+}
+"#;
+    let report = simulate(&checked(source), "VipOnly").unwrap();
+    assert!(
+        report.succeeded(),
+        "left-true short-circuit must not read the uninitialized right side: {:?}",
+        report.failure
+    );
+
+    // Left false: the right side is evaluated and its uninitialized read fails
+    // with the span of the actually-evaluated right path.
+    let failing = r#"system Shop {
+  entity Order {
+    vip: Boolean
+    paid: Boolean
+  }
+  action Ship(order: Order) {
+    requires order.vip || order.paid
+    effects order.vip = true
+  }
+  scenario NotVip {
+    given order.vip = false
+    run Ship(order)
+    expect order.vip
+  }
+}
+"#;
+    let report = simulate(&checked(failing), "NotVip").unwrap();
+    let failure = report.failure.as_ref().expect("right side fails");
+    assert_eq!(failure.phase, SimulationPhase::Requires);
+    assert!(failure.message.contains("uninitialized"));
+    let right_start = failing.find("order.paid").unwrap();
+    assert_eq!(failure.span.start, right_start);
+}
+
+#[test]
+fn disjunction_evaluates_deterministically_across_phases() {
+    let source = r#"system Shop {
+  enum Status {
+    Pending
+    Confirmed
+  }
+  entity Order {
+    status: Status
+    vip: Boolean
+  }
+  action Confirm(order: Order) {
+    requires order.vip || order.status == Pending
+    effects order.status = Confirmed
+    ensures order.status == Confirmed || order.vip
+  }
+  scenario Normal {
+    given order.status = Pending
+    given order.vip = false
+    run Confirm(order)
+    expect order.status == Confirmed || order.status == Pending
+  }
+}
+"#;
+    let report = simulate(&checked(source), "Normal").unwrap();
+    assert!(report.succeeded(), "{:?}", report.failure);
+    assert_eq!(
+        report.state["order.status"],
+        Value::Enum {
+            type_name: "Status".to_owned(),
+            member: "Confirmed".to_owned()
+        }
+    );
+}

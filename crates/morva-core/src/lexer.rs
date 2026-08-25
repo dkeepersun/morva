@@ -46,21 +46,23 @@ pub(crate) fn lex(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
                     (previous.span.end == start).then_some(match &previous.kind {
                         TokenKind::Identifier(_) => SplitLeft::Identifier,
                         TokenKind::Integer(_) => SplitLeft::Integer,
-                        TokenKind::Symbol('=' | '!' | '>' | '<' | '+' | '-') => {
-                            SplitLeft::CompoundOperator
+                        TokenKind::Symbol(symbol @ ('=' | '!' | '>' | '<' | '+' | '-' | '|')) => {
+                            SplitLeft::OperatorStart(*symbol)
                         }
                         _ => SplitLeft::Other,
                     })
                 });
                 let (end, has_newline) = scan_block_comment_run(bytes, start, &mut tokens)?;
                 if !has_newline
-                    && bytes.get(end).is_some_and(|right| {
-                        matches!(split_left, Some(SplitLeft::Identifier))
-                            && (right.is_ascii_alphanumeric() || *right == b'_')
-                            || matches!(split_left, Some(SplitLeft::Integer))
-                                && right.is_ascii_digit()
-                            || matches!(split_left, Some(SplitLeft::CompoundOperator))
-                                && *right == b'='
+                    && bytes.get(end).is_some_and(|right| match split_left {
+                        Some(SplitLeft::Identifier) => {
+                            right.is_ascii_alphanumeric() || *right == b'_'
+                        }
+                        Some(SplitLeft::Integer) => right.is_ascii_digit(),
+                        Some(SplitLeft::OperatorStart(symbol)) => {
+                            *right == b'=' || (symbol == '|' && *right == b'|')
+                        }
+                        _ => false,
                     })
                 {
                     return Err(vec![Diagnostic::new(
@@ -98,7 +100,7 @@ pub(crate) fn lex(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
                     cursor,
                 ));
             }
-            b'=' | b'!' | b'>' | b'<' | b'+' | b'-' => {
+            b'=' | b'!' | b'>' | b'<' | b'+' | b'-' | b'|' => {
                 cursor += 1;
                 let combined = match (bytes[start], bytes.get(cursor)) {
                     (b'=', Some(b'=')) => Some("=="),
@@ -107,6 +109,7 @@ pub(crate) fn lex(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
                     (b'<', Some(b'=')) => Some("<="),
                     (b'+', Some(b'=')) => Some("+="),
                     (b'-', Some(b'=')) => Some("-="),
+                    (b'|', Some(b'|')) => Some("||"),
                     _ => None,
                 };
                 if let Some(operator) = combined {
@@ -159,7 +162,7 @@ pub(crate) fn lex(source: &str) -> Result<Vec<Token>, Vec<Diagnostic>> {
 enum SplitLeft {
     Identifier,
     Integer,
-    CompoundOperator,
+    OperatorStart(char),
     Other,
 }
 

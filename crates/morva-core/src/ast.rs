@@ -477,6 +477,10 @@ impl RebaseSpans for Expr {
                 right.rebase_spans(base)
             }
             ExprKind::Not(operand) => operand.rebase_spans(base),
+            ExprKind::Or { left, right } => {
+                left.rebase_spans(base)?;
+                right.rebase_spans(base)
+            }
             ExprKind::Integer(_) | ExprKind::Boolean(_) => Some(()),
         }
     }
@@ -493,6 +497,10 @@ pub enum ExprKind {
         right: Box<Expr>,
     },
     Not(Box<Expr>),
+    Or {
+        left: Box<Expr>,
+        right: Box<Expr>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

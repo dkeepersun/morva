@@ -588,6 +588,20 @@ fn evaluate_value(
                 span: operand.span,
             }),
         },
+        ExprKind::Or { left, right } => match evaluate_value(left, None, context, state, model)? {
+            Value::Boolean(true) => Ok(Value::Boolean(true)),
+            Value::Boolean(false) => match evaluate_value(right, None, context, state, model)? {
+                Value::Boolean(value) => Ok(Value::Boolean(value)),
+                _ => Err(RuntimeError {
+                    message: "disjunction requires Boolean values".to_owned(),
+                    span: right.span,
+                }),
+            },
+            _ => Err(RuntimeError {
+                message: "disjunction requires Boolean values".to_owned(),
+                span: left.span,
+            }),
+        },
     }
 }
 

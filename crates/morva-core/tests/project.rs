@@ -356,6 +356,10 @@ fn collect_expr_spans(expression: &Expr, spans: &mut Vec<Span>) {
             collect_expr_spans(right, spans);
         }
         ExprKind::Not(operand) => collect_expr_spans(operand, spans),
+        ExprKind::Or { left, right } => {
+            collect_expr_spans(left, spans);
+            collect_expr_spans(right, spans);
+        }
         ExprKind::Integer(_) | ExprKind::Boolean(_) => {}
     }
 }

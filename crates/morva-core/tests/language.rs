@@ -1961,3 +1961,106 @@ fn negation_is_accepted_in_every_predicate_position() {
     let document = parse(source).expect("parses");
     assert!(check(&document).is_empty());
 }
+
+#[test]
+fn disjunction_parses_left_associative_with_deterministic_precedence() {
+    let source = "system Shop {\n  entity Order { paid: Boolean\n    vip: Boolean\n    value: Integer }\n  action Ship(order: Order) {\n    requires order.vip || order.value > 100 || order.paid\n  }\n}\n";
+    let document = parse(source).expect("disjunction parses");
+    assert!(check(&document).is_empty());
+    let predicate = first_action_predicate(&document);
+    // ((vip || value > 100) || paid): left-associative.
+    let morva_core::ExprKind::Or { left, right } = &predicate.kind else {
+        panic!("outer disjunction, got {predicate:?}");
+    };
+    assert!(matches!(right.kind, morva_core::ExprKind::Path(_)));
+    let morva_core::ExprKind::Or {
+        left: inner_left,
+        right: inner_right,
+    } = &left.kind
+    else {
+        panic!("inner disjunction");
+    };
+    assert!(matches!(inner_left.kind, morva_core::ExprKind::Path(_)));
+    assert!(matches!(
+        inner_right.kind,
+        morva_core::ExprKind::Binary { .. }
+    ));
+    let start = source.find("order.vip ||").unwrap();
+    assert_eq!(predicate.span.start, start);
+    assert_eq!(
+        predicate.span.end,
+        source.find("order.paid").unwrap() + "order.paid".len()
+    );
+
+    // '!' binds tighter than '||'.
+    let negated = parse(
+        "system Shop {\n  entity Order { paid: Boolean\n    vip: Boolean }\n  action Ship(order: Order) {\n    requires !order.paid || order.vip\n  }\n}\n",
+    )
+    .expect("parses");
+    assert!(check(&negated).is_empty());
+    let predicate = first_action_predicate(&negated);
+    let morva_core::ExprKind::Or { left, right } = &predicate.kind else {
+        panic!("negation binds tighter than disjunction");
+    };
+    assert!(matches!(left.kind, morva_core::ExprKind::Not(_)));
+    assert!(matches!(right.kind, morva_core::ExprKind::Path(_)));
+
+    // Parentheses override the default shape.
+    let grouped = parse(
+        "system Shop {\n  entity Order { paid: Boolean\n    vip: Boolean }\n  action Ship(order: Order) {\n    requires !(order.paid || order.vip)\n  }\n}\n",
+    )
+    .expect("parses");
+    assert!(check(&grouped).is_empty());
+    let predicate = first_action_predicate(&grouped);
+    let morva_core::ExprKind::Not(operand) = &predicate.kind else {
+        panic!("outer negation");
+    };
+    assert!(matches!(operand.kind, morva_core::ExprKind::Or { .. }));
+}
+
+#[test]
+fn disjunction_reports_stable_syntax_and_type_errors() {
+    let missing = parse("system Shop {\n  action Ship {\n    requires true ||\n  }\n}\n")
+        .expect_err("missing right operand is a syntax error");
+    assert_eq!(missing[0].code, "MORVA1013");
+
+    let single_bar = parse("system Shop {\n  action Ship {\n    requires true | false\n  }\n}\n")
+        .expect_err("single '|' is not an operator");
+    assert_eq!(single_bar[0].code, "MORVA1018");
+    assert_eq!(
+        single_bar[0].message,
+        "unexpected token after clause expression"
+    );
+
+    // Both sides are statically checked even when the left is a constant true.
+    let right_invalid = parse(
+        "system Shop {\n  entity Order { value: Integer }\n  action Ship(order: Order) {\n    requires true || order.value\n  }\n}\n",
+    )
+    .expect("parses");
+    let diagnostics = check(&right_invalid);
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code, "MORVA2013");
+
+    let left_non_boolean = parse(
+        "system Shop {\n  entity Order { value: Integer }\n  action Ship(order: Order) {\n    requires order.value || true\n  }\n}\n",
+    )
+    .expect("parses");
+    let diagnostics = check(&left_non_boolean);
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code, "MORVA2013");
+
+    let unknown_right =
+        parse("system Shop {\n  action Ship {\n    requires true || missing.path == 1\n  }\n}\n")
+            .expect("parses");
+    let diagnostics = check(&unknown_right);
+    assert_eq!(diagnostics[0].code, "MORVA2009");
+}
+
+#[test]
+fn comment_cannot_split_the_disjunction_operator() {
+    let split =
+        parse("system Shop {\n  action Ship {\n    requires true |/* note */| false\n  }\n}\n")
+            .expect_err("split '||' is a token-split error");
+    assert_eq!(split[0].code, "MORVA1025");
+    assert_eq!(split[0].message, "comment cannot split a token");
+}

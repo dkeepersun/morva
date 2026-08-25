@@ -63,7 +63,7 @@ development_status:
 
   epic-3: in-progress
   3-1-分组并取反-boolean-谓词: done
-  3-2-使用析取表达替代业务条件: backlog
+  3-2-使用析取表达替代业务条件: done
   3-3-保守分析嵌套-boolean-矛盾: backlog
   epic-3-retrospective: optional
 
