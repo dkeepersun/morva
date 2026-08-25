@@ -89,7 +89,7 @@ action_items:
   - epic: 2
     action: "事实审查并冻结语言演进策略，移除未经证明的 SAT、复杂度和覆盖率结论"
     owner: "alex"
-    status: open
+    status: done # 2026-08-26：量化覆盖率、SAT 性能与复杂度结论已移除，仅保留定性排序与既定数学事实
   - epic: 2
     action: "基于实际构建证据定义 Rust 工具链固定与 MSRV 策略"
     owner: "alex"
@@ -101,7 +101,7 @@ action_items:
   - epic: 2
     action: "建立非墙钟硬比率的 NFR-04 可重复规模与趋势证据"
     owner: "alex"
-    status: open
+    status: done # 2026-08-26：见 test-artifacts/nfr04-scale-trend.md；常驻确定性规模回归 + 可重复 ignored 趋势测试
   - epic: 2
     action: "推送本地 multi-file/comments 提交并验证新的 hosted Test Pipeline 运行"
     owner: "alex"

@@ -1763,3 +1763,70 @@ fn capability_inventory_matches_public_language_behavior() {
         assert!(check(&document).is_empty(), "{name}");
     }
 }
+
+/// NFR-04: deterministic synthetic model of `units` repeated declaration
+/// groups. Each unit contributes one enum, one entity, one action, one
+/// scenario, and one compatibility module (one analysis notice).
+fn scaled_model(units: usize) -> String {
+    let mut source = String::from("system Scale {\n");
+    for index in 0..units {
+        source.push_str(&format!(
+            concat!(
+                "  enum Status{i} {{\n    Open{i}\n    Closed{i}\n  }}\n",
+                "  module Compat{i} {{}}\n",
+                "  entity Item{i} {{\n    value{i}: Integer\n    status{i}: Status{i}\n    invariant value{i} >= 0\n  }}\n",
+                "  action Act{i}(item: Item{i}) {{\n    requires item.status{i} == Open{i}\n    effects item.value{i} += 1\n    ensures item.value{i} >= 1\n  }}\n",
+                "  scenario Run{i} {{\n    given item.value{i} = 0\n    given item.status{i} = Open{i}\n    run Act{i}(item)\n    expect item.value{i} == 1\n  }}\n"
+            ),
+            i = index
+        ));
+    }
+    source.push_str("}\n");
+    source
+}
+
+#[test]
+fn nfr04_scaled_models_stay_clean_and_deterministic_across_scales() {
+    for units in [25, 100] {
+        let source = scaled_model(units);
+        let document = parse(&source).expect("scaled model parses");
+        let again = parse(&source).expect("scaled model parses again");
+        assert_eq!(document, again, "{units} units: deterministic AST");
+        assert!(
+            check(&document).is_empty(),
+            "{units} units: clean semantic check"
+        );
+        let report = analyze(&document);
+        assert!(report.errors.is_empty(), "{units} units");
+        assert_eq!(
+            report.notices.len(),
+            units,
+            "{units} units: one notice per compatibility module"
+        );
+    }
+}
+
+/// NFR-04 trend evidence generator, deliberately not a gating assertion:
+/// run with `cargo test -p morva-core --test language -- nfr04_scale_trend --ignored --nocapture`
+/// and record the printed table in _bmad-output/test-artifacts/nfr04-scale-trend.md.
+#[test]
+#[ignore = "manual NFR-04 trend evidence; prints timings, asserts only correctness"]
+fn nfr04_scale_trend_evidence() {
+    for units in [8, 16, 32, 64, 128] {
+        let source = scaled_model(units);
+        let mut best = std::time::Duration::MAX;
+        for _ in 0..5 {
+            let start = std::time::Instant::now();
+            let document = parse(&source).expect("scaled model parses");
+            let diagnostics = check(&document);
+            let elapsed = start.elapsed();
+            assert!(diagnostics.is_empty());
+            best = best.min(elapsed);
+        }
+        println!(
+            "units={units:>4} bytes={:>8} parse+check best-of-5={:?}",
+            source.len(),
+            best
+        );
+    }
+}
