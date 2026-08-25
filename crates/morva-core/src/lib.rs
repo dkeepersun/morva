@@ -2,6 +2,7 @@ mod analysis;
 mod ast;
 mod capabilities;
 mod diagnostic;
+pub mod json;
 mod lexer;
 mod parser;
 mod project;

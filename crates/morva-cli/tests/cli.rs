@@ -1288,3 +1288,104 @@ fn parse_renders_disjunction_predicates() {
     assert!(stdout.contains("requires order.vip || order.paid"));
     assert!(stdout.contains("ensures !(order.vip || order.paid)"));
 }
+
+#[test]
+fn json_check_emits_one_versioned_envelope_for_a_clean_model() {
+    let path = temporary_model("json-clean", b"system Shop {}\n");
+    let output = morva(&[
+        "check",
+        "--format",
+        "json",
+        path.to_str().expect("UTF-8 path"),
+    ]);
+    fs::remove_file(&path).expect("remove fixture");
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+    assert_eq!(
+        text(&output.stdout),
+        "{\n  \"protocol\": \"morva.cli\",\n  \"schema_version\": 1,\n  \"command\": \"check\",\n  \"success\": true,\n  \"diagnostics\": []\n}\n"
+    );
+}
+
+#[test]
+fn json_check_reports_structured_diagnostics_with_locations() {
+    let path = temporary_model("json-warn", b"system Shop {\n  module Compat {}\n}\n");
+    let path_text = path.to_str().expect("UTF-8 path").to_owned();
+    let first = morva(&["check", "--format", "json", &path_text]);
+    let second = morva(&["check", "--format", "json", &path_text]);
+    fs::remove_file(&path).expect("remove fixture");
+    assert!(first.status.success());
+    assert!(first.stderr.is_empty());
+    assert_eq!(first.stdout, second.stdout, "byte-identical repeats");
+    let stdout = text(&first.stdout);
+    assert!(stdout.contains("\"success\": true"));
+    assert!(stdout.contains("\"severity\": \"warning\""));
+    assert!(stdout.contains("\"code\": \"MORVA5001\""));
+    assert!(stdout.contains("\"line\": 2"));
+    assert!(stdout.contains("\"column\": 10"));
+    assert!(stdout.contains("\"start\": 23"));
+
+    let broken = temporary_model(
+        "json-error",
+        b"system Shop {\n  entity Order { status: Missing }\n}\n",
+    );
+    let output = morva(&["check", "--format", "json", broken.to_str().unwrap()]);
+    fs::remove_file(&broken).expect("remove fixture");
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stderr.is_empty(), "no human text mixes into stderr");
+    let stdout = text(&output.stdout);
+    assert!(stdout.contains("\"success\": false"));
+    assert!(stdout.contains("\"severity\": \"error\""));
+    assert!(stdout.contains("\"code\": \"MORVA2007\""));
+}
+
+#[test]
+fn json_check_maps_project_diagnostics_to_real_files() {
+    let project = temporary_project("json-project");
+    write_project_source(
+        &project,
+        "10-ok.morva",
+        b"system Shop {\n  policy Rules {}\n}\n",
+    );
+    write_project_source(
+        &project,
+        "20-bad.morva",
+        b"system Shop {\n  entity Order { status: Missing }\n}\n",
+    );
+    let output = morva(&["check", "--format", "json", project.to_str().unwrap()]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stderr.is_empty());
+    let stdout = text(&output.stdout);
+    assert!(stdout.contains("\"success\": false"));
+    assert!(stdout.contains("20-bad.morva\""));
+    assert!(stdout.contains("10-ok.morva\""));
+    assert!(stdout.contains("\"code\": \"MORVA2007\""));
+    assert!(stdout.contains("\"code\": \"MORVA5001\""));
+    assert!(!stdout.contains("virtual"));
+}
+
+#[test]
+fn json_check_uses_a_machine_error_envelope_for_input_and_usage_errors() {
+    let output = morva(&[
+        "check",
+        "--format",
+        "json",
+        "/definitely/missing/model.morva",
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stderr.is_empty());
+    let stdout = text(&output.stdout);
+    assert!(stdout.starts_with("{\n  \"protocol\": \"morva.cli\",\n  \"schema_version\": 1,\n  \"command\": \"check\",\n  \"success\": false,\n  \"error\": {\n    \"kind\": \"input\","));
+
+    let usage = morva(&["check", "--format", "json"]);
+    assert_eq!(usage.status.code(), Some(2));
+    assert!(usage.stderr.is_empty());
+    assert!(text(&usage.stdout).contains("\"kind\": \"usage\""));
+
+    let unknown_format = morva(&["check", "--format", "xml", "model.morva"]);
+    assert_eq!(unknown_format.status.code(), Some(2));
+    assert!(
+        text(&unknown_format.stdout).contains("Usage:"),
+        "unrecognized format stays human"
+    );
+}

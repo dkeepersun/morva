@@ -4,31 +4,59 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use morva_core::json::Json;
 use morva_core::{
     Action, AnalysisFinding, ClauseExpression, Declaration, Diagnostic, Document, Entity, Enum,
     Expr, ExprKind, Notice, NoticeKind, Project, ProjectDiagnostic, ProjectFinding, Scenario,
     ScenarioItem, SimulationReport, Span, analyze, check, parse, simulate,
 };
 
+const MACHINE_PROTOCOL: &str = "morva.cli";
+const MACHINE_SCHEMA_VERSION: u64 = 1;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum OutputFormat {
+    Human,
+    Json,
+}
+
 const MAX_DIAGNOSTIC_WIDTH: usize = 160;
 const LEFT_CONTEXT_WIDTH: usize = 72;
 const ELLIPSIS: &str = "...";
 
 fn main() -> ExitCode {
-    let args: Vec<String> = env::args().skip(1).collect();
-    match args.as_slice() {
-        [command] if command == "help" || command == "--help" || command == "-h" => {
+    let mut args: Vec<String> = env::args().skip(1).collect();
+    let format = match extract_format(&mut args) {
+        Ok(format) => format,
+        Err(()) => {
+            help();
+            return ExitCode::from(2);
+        }
+    };
+    match (args.as_slice(), format) {
+        ([command], OutputFormat::Human)
+            if command == "help" || command == "--help" || command == "-h" =>
+        {
             help();
             ExitCode::SUCCESS
         }
-        [command] if command == "capabilities" => {
+        ([command], OutputFormat::Human) if command == "capabilities" => {
             print_capabilities();
             ExitCode::SUCCESS
         }
-        [command, path] if command == "check" || command == "parse" || command == "inspect" => {
+        ([command, path], OutputFormat::Human)
+            if command == "check" || command == "parse" || command == "inspect" =>
+        {
             run(command, path)
         }
-        [command, path, scenario] if command == "simulate" => run_simulation(path, scenario),
+        ([command, path, scenario], OutputFormat::Human) if command == "simulate" => {
+            run_simulation(path, scenario)
+        }
+        ([command, path], OutputFormat::Json) if command == "check" => run_check_json(path),
+        (rest, OutputFormat::Json) => {
+            let command = rest.first().map(String::as_str).unwrap_or("");
+            machine_error(command, "usage", "unsupported machine command or arguments")
+        }
         _ => {
             help();
             ExitCode::from(2)
@@ -36,10 +64,220 @@ fn main() -> ExitCode {
     }
 }
 
+/// Removes a single `--format <value>` pair anywhere after the command.
+/// Only `json` is a recognized machine format.
+fn extract_format(args: &mut Vec<String>) -> Result<OutputFormat, ()> {
+    let Some(position) = args.iter().position(|argument| argument == "--format") else {
+        return Ok(OutputFormat::Human);
+    };
+    if position + 1 >= args.len() || args[position + 1] != "json" {
+        return Err(());
+    }
+    args.drain(position..position + 2);
+    if args.iter().any(|argument| argument == "--format") {
+        return Err(());
+    }
+    Ok(OutputFormat::Json)
+}
+
+fn machine_envelope(command: &str, success: bool, extra: Vec<(&'static str, Json)>) -> Json {
+    let mut members = vec![
+        ("protocol", Json::string(MACHINE_PROTOCOL)),
+        ("schema_version", Json::UInt(MACHINE_SCHEMA_VERSION)),
+        ("command", Json::string(command)),
+        ("success", Json::Bool(success)),
+    ];
+    members.extend(extra);
+    Json::Object(members)
+}
+
+fn emit_machine(envelope: &Json) {
+    let mut out = String::new();
+    envelope.write(&mut out, 0);
+    println!("{out}");
+}
+
+fn machine_error(command: &str, kind: &str, message: &str) -> ExitCode {
+    emit_machine(&machine_envelope(
+        command,
+        false,
+        vec![(
+            "error",
+            Json::Object(vec![
+                ("kind", Json::string(kind)),
+                ("message", Json::string(message)),
+            ]),
+        )],
+    ));
+    ExitCode::from(2)
+}
+
+fn machine_diagnostic(
+    severity: &str,
+    code: &str,
+    message: &str,
+    location: Option<(&str, &str, Span)>,
+) -> Json {
+    let location = match location {
+        None => Json::Null,
+        Some((path, source, span)) => {
+            let (line, column, _) = self::location(source, span.start);
+            Json::Object(vec![
+                ("source", Json::string(path)),
+                ("line", Json::UInt(line as u64)),
+                ("column", Json::UInt(column as u64)),
+                (
+                    "span",
+                    Json::Object(vec![
+                        ("start", Json::UInt(span.start as u64)),
+                        ("end", Json::UInt(span.end as u64)),
+                    ]),
+                ),
+            ])
+        }
+    };
+    Json::Object(vec![
+        ("severity", Json::string(severity)),
+        ("code", Json::string(code)),
+        ("message", Json::string(message)),
+        ("location", location),
+    ])
+}
+
+fn machine_diagnostics_exit(command: &str, success: bool, diagnostics: Vec<Json>) -> ExitCode {
+    emit_machine(&machine_envelope(
+        command,
+        success,
+        vec![("diagnostics", Json::Array(diagnostics))],
+    ));
+    if success {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+fn load_failure_machine(command: &str, failure: LoadFailure) -> ExitCode {
+    match failure {
+        LoadFailure::Input(message) => machine_error(command, "input", &message),
+        LoadFailure::SingleModel {
+            path,
+            source,
+            diagnostics,
+        } => {
+            let path = path.to_string_lossy();
+            let items = diagnostics
+                .iter()
+                .map(|diagnostic| {
+                    machine_diagnostic(
+                        "error",
+                        diagnostic.code,
+                        &diagnostic.message,
+                        Some((&path, &source, diagnostic.span)),
+                    )
+                })
+                .collect();
+            machine_diagnostics_exit(command, false, items)
+        }
+        LoadFailure::ProjectModel {
+            sources,
+            diagnostics,
+        } => {
+            let items = diagnostics
+                .iter()
+                .map(|diagnostic| project_diagnostic_json(&sources, diagnostic))
+                .collect();
+            machine_diagnostics_exit(command, false, items)
+        }
+    }
+}
+
+fn project_diagnostic_json(sources: &[CliSource], diagnostic: &ProjectDiagnostic) -> Json {
+    match diagnostic {
+        ProjectDiagnostic::Project { diagnostic } => {
+            machine_diagnostic("error", diagnostic.code, &diagnostic.message, None)
+        }
+        ProjectDiagnostic::Source {
+            source_id,
+            local_diagnostic,
+        } => {
+            let source = &sources[source_id.0];
+            machine_diagnostic(
+                "error",
+                local_diagnostic.code,
+                &local_diagnostic.message,
+                Some((
+                    &source.path.to_string_lossy(),
+                    &source.source,
+                    local_diagnostic.span,
+                )),
+            )
+        }
+    }
+}
+
+fn run_check_json(path: &str) -> ExitCode {
+    let model = match load_model(path) {
+        Ok(model) => model,
+        Err(failure) => return load_failure_machine("check", failure),
+    };
+    match &model {
+        LoadedModel::Single { source, document } => {
+            let report = analyze(document);
+            let path = source.path.to_string_lossy();
+            let items = report
+                .findings()
+                .iter()
+                .map(|finding| match finding {
+                    AnalysisFinding::Error(error) => machine_diagnostic(
+                        "error",
+                        error.code,
+                        &error.message,
+                        Some((&path, &source.source, error.span)),
+                    ),
+                    AnalysisFinding::Notice(notice) => machine_diagnostic(
+                        "warning",
+                        notice.code,
+                        &notice.message,
+                        Some((&path, &source.source, notice.span)),
+                    ),
+                })
+                .collect();
+            machine_diagnostics_exit("check", !report.has_errors(), items)
+        }
+        LoadedModel::Project { sources, project } => {
+            let report = project.analyze();
+            let items = report
+                .findings()
+                .iter()
+                .map(|finding| match finding {
+                    ProjectFinding::Error(diagnostic) => {
+                        project_diagnostic_json(sources, diagnostic)
+                    }
+                    ProjectFinding::Notice(notice) => {
+                        let source = &sources[notice.source_id.0];
+                        machine_diagnostic(
+                            "warning",
+                            notice.local_notice.code,
+                            &notice.local_notice.message,
+                            Some((
+                                &source.path.to_string_lossy(),
+                                &source.source,
+                                notice.local_notice.span,
+                            )),
+                        )
+                    }
+                })
+                .collect();
+            machine_diagnostics_exit("check", !report.has_errors(), items)
+        }
+    }
+}
+
 fn run_simulation(path: &str, scenario: &str) -> ExitCode {
     let model = match load_checked_model(path) {
         Ok(model) => model,
-        Err(code) => return code,
+        Err(failure) => return failure.exit_human(),
     };
     let report = match simulate(model.document(), scenario) {
         Ok(report) => report,
@@ -63,7 +301,7 @@ fn run(command: &str, path: &str) -> ExitCode {
     }
     let model = match load_checked_model(path) {
         Ok(model) => model,
-        Err(code) => return code,
+        Err(failure) => return failure.exit_human(),
     };
     let document = model.document();
     match command {
@@ -77,7 +315,7 @@ fn run(command: &str, path: &str) -> ExitCode {
 fn run_check(path: &str) -> ExitCode {
     let model = match load_model(path) {
         Ok(model) => model,
-        Err(code) => return code,
+        Err(failure) => return failure.exit_human(),
     };
     let has_errors = match &model {
         LoadedModel::Single { source, document } => {
@@ -99,6 +337,7 @@ fn run_check(path: &str) -> ExitCode {
     }
 }
 
+#[derive(Clone)]
 struct CliSource {
     path: PathBuf,
     name: String,
@@ -197,28 +436,33 @@ impl LoadedModel {
     }
 }
 
-fn load_checked_model(path: &str) -> Result<LoadedModel, ExitCode> {
+fn load_checked_model(path: &str) -> Result<LoadedModel, LoadFailure> {
     let model = load_model(path)?;
     match &model {
         LoadedModel::Single { source, document } => {
             let diagnostics = check(document);
             if !diagnostics.is_empty() {
-                render_diagnostics(&source.path.to_string_lossy(), &source.source, &diagnostics);
-                return Err(ExitCode::FAILURE);
+                return Err(LoadFailure::SingleModel {
+                    path: source.path.clone(),
+                    source: source.source.clone(),
+                    diagnostics,
+                });
             }
         }
         LoadedModel::Project { sources, project } => {
             let diagnostics = project.check();
             if !diagnostics.is_empty() {
-                render_project_diagnostics(sources, &diagnostics);
-                return Err(ExitCode::FAILURE);
+                return Err(LoadFailure::ProjectModel {
+                    sources: sources.clone(),
+                    diagnostics,
+                });
             }
         }
     }
     Ok(model)
 }
 
-fn load_model(path: &str) -> Result<LoadedModel, ExitCode> {
+fn load_model(path: &str) -> Result<LoadedModel, LoadFailure> {
     let path = Path::new(path);
     if path.is_dir() {
         load_project(path)
@@ -227,21 +471,24 @@ fn load_model(path: &str) -> Result<LoadedModel, ExitCode> {
     }
 }
 
-fn load_single(path: &Path) -> Result<LoadedModel, ExitCode> {
+fn load_single(path: &Path) -> Result<LoadedModel, LoadFailure> {
     let source = read_source(path)?;
     let document = match parse(&source.source) {
         Ok(document) => document,
         Err(diagnostics) => {
-            render_diagnostics(&path.to_string_lossy(), &source.source, &diagnostics);
-            return Err(ExitCode::FAILURE);
+            return Err(LoadFailure::SingleModel {
+                path: source.path,
+                source: source.source,
+                diagnostics,
+            });
         }
     };
     Ok(LoadedModel::Single { source, document })
 }
 
-fn load_project(root: &Path) -> Result<LoadedModel, ExitCode> {
+fn load_project(root: &Path) -> Result<LoadedModel, LoadFailure> {
     let canonical_root = fs::canonicalize(root).map_err(|error| {
-        input_error(format_args!(
+        input_failure(format_args!(
             "cannot resolve project directory {}: {error}",
             safe_path(&root.to_string_lossy())
         ))
@@ -258,37 +505,36 @@ fn load_project(root: &Path) -> Result<LoadedModel, ExitCode> {
     ) {
         Ok(project) => project,
         Err(diagnostics) => {
-            render_project_diagnostics(&sources, &diagnostics);
-            return Err(ExitCode::FAILURE);
+            return Err(LoadFailure::ProjectModel {
+                sources,
+                diagnostics,
+            });
         }
     };
     Ok(LoadedModel::Project { sources, project })
 }
 
-fn discover_project_sources(root: &Path) -> Result<Vec<DiscoveredSource>, ExitCode> {
+fn discover_project_sources(root: &Path) -> Result<Vec<DiscoveredSource>, LoadFailure> {
     let entries = fs::read_dir(root).map_err(|error| {
-        eprintln!(
-            "error: cannot read project directory {}: {error}",
+        input_failure(format_args!(
+            "cannot read project directory {}: {error}",
             safe_path(&root.to_string_lossy())
-        );
-        ExitCode::from(2)
+        ))
     })?;
     let mut sources = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|error| {
-            eprintln!(
-                "error: cannot discover project sources in {}: {error}",
+            input_failure(format_args!(
+                "cannot discover project sources in {}: {error}",
                 safe_path(&root.to_string_lossy())
-            );
-            ExitCode::from(2)
+            ))
         })?;
         let path = entry.path();
         let metadata = fs::symlink_metadata(&path).map_err(|error| {
-            eprintln!(
-                "error: cannot inspect {}: {error}",
+            input_failure(format_args!(
+                "cannot inspect {}: {error}",
                 safe_path(&path.to_string_lossy())
-            );
-            ExitCode::from(2)
+            ))
         })?;
         if !metadata.file_type().is_file() {
             continue;
@@ -298,11 +544,10 @@ fn discover_project_sources(root: &Path) -> Result<Vec<DiscoveredSource>, ExitCo
             continue;
         }
         let Some(name) = file_name.to_str() else {
-            eprintln!(
-                "error: project source filename in {} is not valid UTF-8",
+            return Err(input_failure(format_args!(
+                "project source filename in {} is not valid UTF-8",
                 safe_path(&root.to_string_lossy())
-            );
-            return Err(ExitCode::from(2));
+            )));
         };
         sources.push(DiscoveredSource {
             path,
@@ -312,22 +557,20 @@ fn discover_project_sources(root: &Path) -> Result<Vec<DiscoveredSource>, ExitCo
     }
     sources.sort_by(|left, right| left.name.as_bytes().cmp(right.name.as_bytes()));
     if sources.is_empty() {
-        eprintln!(
-            "error: project directory {} contains no .morva source files",
+        return Err(input_failure(format_args!(
+            "project directory {} contains no .morva source files",
             safe_path(&root.to_string_lossy())
-        );
-        return Err(ExitCode::from(2));
+        )));
     }
     Ok(sources)
 }
 
-fn read_source(path: &Path) -> Result<CliSource, ExitCode> {
+fn read_source(path: &Path) -> Result<CliSource, LoadFailure> {
     let source = fs::read_to_string(path).map_err(|error| {
-        eprintln!(
-            "error: cannot read {}: {error}",
+        input_failure(format_args!(
+            "cannot read {}: {error}",
             safe_path(&path.to_string_lossy())
-        );
-        ExitCode::from(2)
+        ))
     })?;
     Ok(CliSource {
         path: path.to_owned(),
@@ -339,46 +582,46 @@ fn read_source(path: &Path) -> Result<CliSource, ExitCode> {
 fn read_project_source(
     canonical_root: &Path,
     discovered: DiscoveredSource,
-) -> Result<CliSource, ExitCode> {
+) -> Result<CliSource, LoadFailure> {
     let before = fs::symlink_metadata(&discovered.path).map_err(|error| {
-        input_error(format_args!(
+        input_failure(format_args!(
             "cannot inspect {} before reading: {error}",
             safe_path(&discovered.path.to_string_lossy())
         ))
     })?;
     if !before.file_type().is_file() || file_identity(&before) != discovered.identity {
-        return Err(input_error(format_args!(
+        return Err(input_failure(format_args!(
             "project source changed during discovery: {}",
             safe_path(&discovered.path.to_string_lossy())
         )));
     }
     let canonical_path = fs::canonicalize(&discovered.path).map_err(|error| {
-        input_error(format_args!(
+        input_failure(format_args!(
             "cannot resolve project source {}: {error}",
             safe_path(&discovered.path.to_string_lossy())
         ))
     })?;
     if canonical_path.parent() != Some(canonical_root) {
-        return Err(input_error(format_args!(
+        return Err(input_failure(format_args!(
             "project source resolves outside its directory: {}",
             safe_path(&discovered.path.to_string_lossy())
         )));
     }
 
     let mut file = File::open(&discovered.path).map_err(|error| {
-        input_error(format_args!(
+        input_failure(format_args!(
             "cannot read {}: {error}",
             safe_path(&discovered.path.to_string_lossy())
         ))
     })?;
     let opened = file.metadata().map_err(|error| {
-        input_error(format_args!(
+        input_failure(format_args!(
             "cannot inspect opened project source {}: {error}",
             safe_path(&discovered.path.to_string_lossy())
         ))
     })?;
     let after = fs::symlink_metadata(&discovered.path).map_err(|error| {
-        input_error(format_args!(
+        input_failure(format_args!(
             "cannot revalidate project source {}: {error}",
             safe_path(&discovered.path.to_string_lossy())
         ))
@@ -388,7 +631,7 @@ fn read_project_source(
         || file_identity(&opened) != discovered.identity
         || file_identity(&after) != discovered.identity
     {
-        return Err(input_error(format_args!(
+        return Err(input_failure(format_args!(
             "project source changed while opening: {}",
             safe_path(&discovered.path.to_string_lossy())
         )));
@@ -396,7 +639,7 @@ fn read_project_source(
 
     let mut source = String::new();
     file.read_to_string(&mut source).map_err(|error| {
-        input_error(format_args!(
+        input_failure(format_args!(
             "cannot read {}: {error}",
             safe_path(&discovered.path.to_string_lossy())
         ))
@@ -425,9 +668,47 @@ fn file_identity(metadata: &Metadata) -> FileIdentity {
     }
 }
 
-fn input_error(message: std::fmt::Arguments<'_>) -> ExitCode {
-    eprintln!("error: {message}");
-    ExitCode::from(2)
+fn input_failure(message: std::fmt::Arguments<'_>) -> LoadFailure {
+    LoadFailure::Input(message.to_string())
+}
+
+enum LoadFailure {
+    Input(String),
+    SingleModel {
+        path: PathBuf,
+        source: String,
+        diagnostics: Vec<Diagnostic>,
+    },
+    ProjectModel {
+        sources: Vec<CliSource>,
+        diagnostics: Vec<ProjectDiagnostic>,
+    },
+}
+
+impl LoadFailure {
+    fn exit_human(self) -> ExitCode {
+        match self {
+            Self::Input(message) => {
+                eprintln!("error: {message}");
+                ExitCode::from(2)
+            }
+            Self::SingleModel {
+                path,
+                source,
+                diagnostics,
+            } => {
+                render_diagnostics(&path.to_string_lossy(), &source, &diagnostics);
+                ExitCode::FAILURE
+            }
+            Self::ProjectModel {
+                sources,
+                diagnostics,
+            } => {
+                render_project_diagnostics(&sources, &diagnostics);
+                ExitCode::FAILURE
+            }
+        }
+    }
 }
 
 fn render_project_diagnostics(sources: &[CliSource], diagnostics: &[ProjectDiagnostic]) {
@@ -1035,6 +1316,6 @@ fn print_capabilities() {
 
 fn help() {
     println!(
-        "Morva semantic model tools\n\nUsage:\n  morva check <file-or-directory>\n  morva parse <file-or-directory>\n  morva inspect <file-or-directory>\n  morva simulate <file-or-directory> <scenario>\n  morva capabilities\n  morva help"
+        "Morva semantic model tools\n\nUsage:\n  morva check [--format json] <file-or-directory>\n  morva parse <file-or-directory>\n  morva inspect <file-or-directory>\n  morva simulate <file-or-directory> <scenario>\n  morva capabilities\n  morva help"
     );
 }

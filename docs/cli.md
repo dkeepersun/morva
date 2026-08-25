@@ -61,6 +61,28 @@ the architecture.
 Exit codes are `0` for success, `1` for invalid input, and `2` for command or file usage errors.
 Invalid input diagnostics include a stable code, line and column, and a source marker. LF, CRLF, and CR each advance one logical line, including in mixed files; newline terminators are omitted from excerpts. Each displayed source excerpt and marker is limited to 160 rendered characters, keeps the error start visible, and uses `...` for cropped context. Tabs expand to four spaces while the reported logical column still counts each tab as one character; control and non-ASCII bytes are escaped without splitting an escape fragment. This is not a total stderr limit: diagnostic messages and safely escaped UTF-8 paths are not truncated. Every CLI result safely escapes control characters in displayed paths.
 
+## Machine output
+
+`check` accepts `--format json`. Machine output writes exactly one versioned
+JSON envelope to stdout and nothing to stderr:
+
+```json
+{ "protocol": "morva.cli", "schema_version": 1, "command": "check", "success": true, "diagnostics": [] }
+```
+
+Each diagnostic carries `severity` (`error`/`warning`), the stable `code`, the
+complete `message`, and a `location` with the real source path, 1-based
+line/column, and the file-local byte span — project diagnostics never expose
+virtual offsets, and rare source-less project diagnostics use `location: null`.
+Model errors keep exit `1` with `success: false`; unreadable input, discovery
+failures, and usage errors (once `--format json` is recognized) return a
+machine error envelope `{ "error": { "kind": "input" | "usage", "message": … } }`
+with exit `2`. Output is deterministic — no timestamps, absolute machine paths,
+or environment noise — and JSON escaping keeps control characters out of the
+terminal. `schema_version` only changes with a reviewed incompatible protocol
+change. Without `--format json` every command keeps its existing human output
+and exit codes.
+
 ## Planned, not implemented
 
 ```text
