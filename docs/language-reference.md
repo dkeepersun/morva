@@ -170,7 +170,7 @@ implementation_hint {
 
 这些内容只以 `SoftBehavior { kind, span }` provenance 进入 AST；参数、路径和 block 正文仍被丢弃，不进入行为语义、静态证明或模拟。显式 analysis 和 CLI `check` 会为每个源码项报告一个 `MORVA5002` warning，span 只覆盖其 keyword，消息说明该项未被语义验证或模拟执行。旧 `check()` API、`parse`/`inspect`/`simulate` 输出和成功退出码不变；拼写错误或其他未知 action 项仍会失败。
 
-Line soft item 从行首白名单 keyword 延续到逻辑换行或 action `}`，其中再次出现白名单词不会产生额外 warning。每个 `implementation_hint` block（包括嵌套 block）是一个 item。
+Line soft item 从行首白名单 keyword 延续到逻辑换行或 action `}`，其中再次出现白名单词不会产生额外 warning。每个 `implementation_hint` block（包括嵌套 block）是一个 item；block 闭合后同一逻辑行不得继续出现其他 action item，否则解析失败（`MORVA1018`）。
 
 ## 7. 名称规则
 

@@ -1610,6 +1610,13 @@ fn malformed_soft_behaviors_keep_existing_parser_errors_without_partial_analysis
             "{ nested",
             1,
         ),
+        (
+            "system Shop {\n  action Save {\n    implementation_hint {} atomic\n  }\n}\n",
+            "MORVA1018",
+            "unexpected token after implementation_hint block",
+            "atomic",
+            6,
+        ),
     ] {
         let diagnostics = parse(source).expect_err("malformed input must not produce an AST");
         assert_eq!(diagnostics.len(), 1, "{source:?}");

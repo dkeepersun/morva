@@ -538,6 +538,7 @@ impl Parser {
         let span = self.bump().span;
         self.expect_block("expected block after implementation_hint")?;
         self.skip_balanced_contents()?;
+        self.line_end("unexpected token after implementation_hint block")?;
         Ok(SoftBehavior { kind, span })
     }
 

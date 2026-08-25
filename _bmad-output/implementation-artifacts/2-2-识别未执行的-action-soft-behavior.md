@@ -4,7 +4,7 @@ baseline_commit: bc81facbf3afe9a76993444fbbcb07106a1f797c
 
 # Story 2.2: 识别未执行的 action soft behavior
 
-Status: review
+Status: done
 
 ## Story
 
@@ -57,7 +57,7 @@ so that 我不会把 `atomic`、重试设置或实现提示误认为模拟器已
 
 ### Review Findings
 
-- [ ] [Review][Patch] 拒绝在 `implementation_hint` block 同一逻辑行继续识别第二个 soft item，避免 `implementation_hint {} atomic` 成功并产生两个 `MORVA5002` [crates/morva-core/src/parser.rs:270]
+- [x] [Review][Patch] 拒绝在 `implementation_hint` block 同一逻辑行继续识别第二个 soft item，避免 `implementation_hint {} atomic` 成功并产生两个 `MORVA5002` [crates/morva-core/src/parser.rs:270]
 
 ## Dev Notes
 
@@ -202,3 +202,4 @@ GPT-5 Codex
 
 - 2026-08-11: Created comprehensive Story 2.2 context and marked it ready for development.
 - 2026-08-11: Implemented structured action soft-behavior provenance and `MORVA5002` warnings; added cross-layer regressions, synchronized documentation, and marked the story ready for review.
+- 2026-08-26: Applied the review patch: an `implementation_hint` block must be the last item on its logical line; a trailing same-line item now fails with `MORVA1018` and an exact-code regression test locks the boundary. Full local gates re-ran green (fmt, strict Clippy, 154 workspace tests, example closed loop).
