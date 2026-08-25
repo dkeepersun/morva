@@ -8,6 +8,7 @@
 - 带字节 span 的 lexer、parser、强类型 AST 和 diagnostic。
 - `system`、`entity`、`enum`、`action`、`scenario` 核心模型。
 - 字段、参数、enum member、四类行为条款和有限表达式。
+- 谓词级 Boolean 取反 `!` 与分组括号：比较优先于 `!`，连续取反与嵌套括号任意深度；`!` 操作数必须为 Boolean（`MORVA2013`），空括号/未闭合括号有稳定语法诊断（`MORVA1013`/`MORVA1026`）；模拟按七阶段确定求值取反，未初始化读取契约与责任 span 保持不变。
 - 单一顶层 system、重复名称、未知/歧义类型、路径、enum member、effect target 检查。
 - Canonical builtin、Boolean 谓词、比较操作数及 effect 值类型检查；解析失败后抑制派生类型诊断。
 - Action 前/后态的有限精确字面量事实一致性检查，以及顺序 effects 最终已知直接赋值与后置约束检查（`MORVA2018/2019`）。
@@ -35,9 +36,9 @@
 
 ### 静态类型检查边界
 
-当前 checker 已区分 canonical builtin family，并检查现有谓词、比较和 effect 类型。它仍不是完整类型系统：没有通用推断或转换、逻辑/算术表达式、Entity 整体值、数据流分析或形式化证明。Decimal 上下文只接受非负 Integer 字面量作为精确常量；受限 simulator 仍只执行 enum、Boolean 和 Integer 值，并保留运行时守卫。
+当前 checker 已区分 canonical builtin family，并检查现有谓词、比较和 effect 类型。它仍不是完整类型系统：没有通用推断或转换、析取/算术表达式、Entity 整体值、数据流分析或形式化证明。Decimal 上下文只接受非负 Integer 字面量作为精确常量；受限 simulator 仍只执行 enum、Boolean 和 Integer 值，并保留运行时守卫。
 
-明显矛盾检查只处理已解析的 Boolean、Integer、enum 与 Decimal-context Integer 精确字面量事实。它不做有序区间求解、entity invariant 参数实例化、scenario/action 内联、未写路径跨阶段推理或 compound effect 折叠；非字面量写入和 compound effect 会把相应最终值降为 Unknown。
+明显矛盾检查只处理已解析的 Boolean、Integer、enum 与 Decimal-context Integer 精确字面量事实；含 `!` 的谓词当前不参与事实推导。它不做有序区间求解、entity invariant 参数实例化、scenario/action 内联、未写路径跨阶段推理或 compound effect 折叠；非字面量写入和 compound effect 会把相应最终值降为 Unknown。
 
 ### 词法与诊断边界
 

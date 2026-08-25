@@ -1238,6 +1238,9 @@ fn capabilities_prints_the_stable_inventory_without_reading_models() {
     let stdout = text(&first.stdout);
     assert!(stdout.starts_with("capabilities: v1\n"));
     assert!(stdout.contains("\ndeclarations: system, entity, enum, action, scenario\n"));
+    assert!(stdout.contains(
+        "\nexpression forms: path reference, Integer literal, Boolean literal, binary comparison, Boolean negation, grouped predicate\n"
+    ));
     assert!(stdout.contains("\ncomparison operators: ==, !=, >, >=, <, <=\n"));
     assert!(stdout.contains("\nassignment operators: =, +=, -=\n"));
     assert!(stdout.contains(
@@ -1256,4 +1259,18 @@ fn capabilities_prints_the_stable_inventory_without_reading_models() {
     assert_eq!(first.status.code(), second.status.code());
 
     assert_eq!(morva(&["capabilities", "extra"]).status.code(), Some(2));
+}
+
+#[test]
+fn parse_renders_negated_and_grouped_predicates() {
+    let path = temporary_model(
+        "negation",
+        b"system Shop {\n  entity Order { paid: Boolean }\n  action Close(order: Order) {\n    requires !order.paid\n    ensures !(order.paid == true)\n  }\n}\n",
+    );
+    let output = morva(&["parse", path.to_str().expect("UTF-8 path")]);
+    fs::remove_file(path).expect("remove fixture");
+    assert!(output.status.success(), "{}", text(&output.stderr));
+    let stdout = text(&output.stdout);
+    assert!(stdout.contains("requires !order.paid"));
+    assert!(stdout.contains("ensures !(order.paid == true)"));
 }

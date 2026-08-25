@@ -770,7 +770,7 @@ fn literal_fact(
             path_literal_fact(left, *operator, right, parameters, index)
                 .or_else(|| path_literal_fact(right, *operator, left, parameters, index))
         }
-        ExprKind::Integer(_) | ExprKind::Path(_) => None,
+        ExprKind::Integer(_) | ExprKind::Path(_) | ExprKind::Not(_) => None,
     }
 }
 
@@ -841,7 +841,7 @@ fn plain_literal(expression: &Expr) -> Option<LiteralFactValue> {
     match expression.kind {
         ExprKind::Boolean(value) => Some(LiteralFactValue::Boolean(value)),
         ExprKind::Integer(value) => Some(LiteralFactValue::Integer(value)),
-        ExprKind::Path(_) | ExprKind::Binary { .. } => None,
+        ExprKind::Path(_) | ExprKind::Binary { .. } | ExprKind::Not(_) => None,
     }
 }
 
@@ -930,7 +930,9 @@ fn check_predicate(
     index: &TypeIndex<'_>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    if let ExprKind::Binary {
+    if let ExprKind::Not(operand) = &expression.kind {
+        check_predicate(operand, fields, parameters, index, diagnostics);
+    } else if let ExprKind::Binary {
         left,
         operator,
         right,
@@ -1090,7 +1092,7 @@ fn check_assignment_value(
     let expression = &assignment.value;
     let fields = HashMap::new();
     if assignment.operator != AssignmentOperator::Set {
-        let actual = if matches!(expression.kind, ExprKind::Binary { .. }) {
+        let actual = if matches!(expression.kind, ExprKind::Binary { .. } | ExprKind::Not(_)) {
             let diagnostic_count = diagnostics.len();
             check_predicate(expression, &fields, parameters, index, diagnostics);
             if diagnostics.len() != diagnostic_count {
@@ -1135,7 +1137,7 @@ fn check_assignment_value(
         }
         return;
     }
-    if matches!(expression.kind, ExprKind::Binary { .. }) {
+    if matches!(expression.kind, ExprKind::Binary { .. } | ExprKind::Not(_)) {
         let diagnostic_count = diagnostics.len();
         check_predicate(expression, &fields, parameters, index, diagnostics);
         if diagnostics.len() == diagnostic_count
@@ -1213,7 +1215,7 @@ fn resolve_operand<'a, 'b>(
         ExprKind::Integer(_) => Operand::Typed(Some(ResolvedType::Builtin(BuiltinType::Integer))),
         ExprKind::Boolean(_) => Operand::Typed(Some(ResolvedType::Builtin(BuiltinType::Boolean))),
         ExprKind::Path(path) => resolve_path(path, fields, parameters, index, diagnostics),
-        ExprKind::Binary { .. } => Operand::Typed(None),
+        ExprKind::Binary { .. } | ExprKind::Not(_) => Operand::Typed(None),
     }
 }
 

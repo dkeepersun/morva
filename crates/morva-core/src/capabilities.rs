@@ -34,6 +34,8 @@ pub fn capabilities() -> CapabilityInventory {
             "Integer literal",
             "Boolean literal",
             "binary comparison",
+            "Boolean negation",
+            "grouped predicate",
         ],
         comparison_operators: BinaryOperator::ALL.map(BinaryOperator::as_str).to_vec(),
         assignment_operators: AssignmentOperator::ALL
@@ -47,7 +49,7 @@ pub fn capabilities() -> CapabilityInventory {
         compatibility_containers: COMPATIBILITY_CONTAINER_KINDS.to_vec(),
         soft_behaviors: SoftBehaviorKind::ALL.map(SoftBehaviorKind::as_str).to_vec(),
         unsupported: vec![
-            "logical 'or', 'not', and grouped predicates",
+            "logical 'or'",
             "arithmetic expressions",
             "String literals",
             "Decimal literals",

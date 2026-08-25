@@ -581,6 +581,13 @@ fn evaluate_value(
             state,
             model,
         ),
+        ExprKind::Not(operand) => match evaluate_value(operand, None, context, state, model)? {
+            Value::Boolean(value) => Ok(Value::Boolean(!value)),
+            _ => Err(RuntimeError {
+                message: "negation requires a Boolean value".to_owned(),
+                span: operand.span,
+            }),
+        },
     }
 }
 

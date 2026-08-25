@@ -823,6 +823,13 @@ fn format_expr(expression: &Expr) -> String {
                 format_expr(right)
             )
         }
+        ExprKind::Not(operand) => {
+            if matches!(operand.kind, ExprKind::Binary { .. }) {
+                format!("!({})", format_expr(operand))
+            } else {
+                format!("!{}", format_expr(operand))
+            }
+        }
     }
 }
 

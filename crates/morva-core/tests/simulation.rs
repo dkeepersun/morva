@@ -531,3 +531,74 @@ fn simulation_phases_match_the_capability_inventory() {
         inventory.simulation_phases
     );
 }
+
+#[test]
+fn negation_evaluates_deterministically_in_all_phases() {
+    let source = r#"system Shop {
+  entity Order {
+    open: Boolean
+  }
+  action Close(order: Order) {
+    requires !(order.open == false)
+    effects order.open = false
+    ensures !order.open
+  }
+  scenario CloseIt {
+    given order.open = true
+    run Close(order)
+    expect !order.open
+  }
+}
+"#;
+    let report = simulate(&checked(source), "CloseIt").unwrap();
+    assert!(report.succeeded());
+    assert_eq!(report.state["order.open"], Value::Boolean(false));
+
+    let failing = r#"system Shop {
+  entity Order {
+    open: Boolean
+  }
+  action Close(order: Order) {
+    requires !order.open
+    effects order.open = false
+  }
+  scenario CloseIt {
+    given order.open = true
+    run Close(order)
+    expect true
+  }
+}
+"#;
+    let report = simulate(&checked(failing), "CloseIt").unwrap();
+    let failure = report.failure.as_ref().expect("negated requires fails");
+    assert_eq!(failure.phase, SimulationPhase::Requires);
+    assert!(report.changes.is_empty());
+}
+
+#[test]
+fn negation_preserves_the_uninitialized_read_contract() {
+    let source = r#"system Shop {
+  entity Order {
+    open: Boolean
+  }
+  action Close(order: Order) {
+    requires !order.open
+    effects order.open = false
+  }
+  scenario CloseIt {
+    run Close(order)
+    expect true
+  }
+}
+"#;
+    let full_source = source;
+    let report = simulate(&checked(source), "CloseIt").unwrap();
+    let failure = report.failure.as_ref().expect("uninitialized read fails");
+    assert_eq!(failure.phase, SimulationPhase::Requires);
+    assert!(failure.message.contains("uninitialized"));
+    let path_start = full_source.find("!order.open").unwrap() + 1;
+    assert_eq!(
+        failure.span.start, path_start,
+        "failure span points at the responsible path, not the negation"
+    );
+}

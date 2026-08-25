@@ -1830,3 +1830,134 @@ fn nfr04_scale_trend_evidence() {
         );
     }
 }
+
+#[test]
+fn negation_and_grouping_parse_with_deterministic_precedence() {
+    let source = "system Shop {\n  entity Order { paid: Boolean }\n  action Close(order: Order) {\n    requires !order.paid\n  }\n}\n";
+    let document = parse(source).expect("negated path parses");
+    assert!(check(&document).is_empty());
+    let predicate = first_action_predicate(&document);
+    let morva_core::ExprKind::Not(operand) = &predicate.kind else {
+        panic!("expected negation, got {predicate:?}");
+    };
+    assert!(matches!(operand.kind, morva_core::ExprKind::Path(_)));
+    let start = source.find("!order.paid").unwrap();
+    assert_eq!(predicate.span.start, start);
+    assert_eq!(predicate.span.end, start + "!order.paid".len());
+
+    // Comparison binds tighter than '!': !a == b parses as !(a == b).
+    for text in [
+        "!order.paid == false",
+        "!(order.paid == false)",
+        "((!((order.paid == false))))",
+    ] {
+        let source = format!(
+            "system Shop {{\n  entity Order {{ paid: Boolean }}\n  action Close(order: Order) {{\n    requires {text}\n  }}\n}}\n"
+        );
+        let document = parse(&source).expect("negated comparison parses");
+        assert!(check(&document).is_empty(), "{text}");
+        let predicate = first_action_predicate(&document);
+        let morva_core::ExprKind::Not(operand) = &predicate.kind else {
+            panic!("{text}: expected negation, got {predicate:?}");
+        };
+        assert!(
+            matches!(operand.kind, morva_core::ExprKind::Binary { .. }),
+            "{text}"
+        );
+    }
+
+    let double = parse(
+        "system Shop {\n  entity Order { paid: Boolean }\n  action Close(order: Order) {\n    requires !!order.paid\n  }\n}\n",
+    )
+    .expect("double negation parses");
+    assert!(check(&double).is_empty());
+    let predicate = first_action_predicate(&double);
+    let morva_core::ExprKind::Not(inner) = &predicate.kind else {
+        panic!("outer negation");
+    };
+    assert!(matches!(inner.kind, morva_core::ExprKind::Not(_)));
+
+    let grouped_source = "system Shop {\n  entity Order { paid: Boolean }\n  action Close(order: Order) {\n    requires ((true))\n  }\n}\n";
+    let grouped = parse(grouped_source).expect("grouped literal parses");
+    let predicate = first_action_predicate(&grouped);
+    assert!(matches!(
+        predicate.kind,
+        morva_core::ExprKind::Boolean(true)
+    ));
+    let start = grouped_source.find("((true))").unwrap();
+    assert_eq!(predicate.span.start, start);
+    assert_eq!(predicate.span.end, start + "((true))".len());
+}
+
+fn first_action_predicate(document: &morva_core::Document) -> &morva_core::Expr {
+    let Declaration::System(system) = &document.declarations[0] else {
+        panic!("system");
+    };
+    let action = system
+        .declarations
+        .iter()
+        .find_map(|declaration| match declaration {
+            Declaration::Action(action) => Some(action),
+            _ => None,
+        })
+        .expect("action");
+    let ClauseExpression::Predicate(expression) = &action.clauses[0].expressions[0] else {
+        panic!("predicate");
+    };
+    expression
+}
+
+#[test]
+fn negation_and_grouping_report_stable_syntax_and_type_errors() {
+    let unclosed = parse("system Shop {\n  action Close {\n    requires (true\n  }\n}\n")
+        .expect_err("unclosed group is a syntax error");
+    assert_eq!(unclosed[0].code, "MORVA1026");
+    assert_eq!(
+        unclosed[0].message,
+        "expected ')' to close the grouped predicate"
+    );
+
+    let empty = parse("system Shop {\n  action Close {\n    requires ()\n  }\n}\n")
+        .expect_err("empty group is a syntax error");
+    assert_eq!(empty[0].code, "MORVA1013");
+
+    let non_boolean = parse(
+        "system Shop {\n  entity Order { value: Integer }\n  action Close(order: Order) {\n    requires !order.value\n  }\n}\n",
+    )
+    .expect("parses");
+    let diagnostics = check(&non_boolean);
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code, "MORVA2013");
+    assert!(diagnostics[0].message.contains("found Integer"));
+
+    let literal =
+        parse("system Shop {\n  action Close {\n    requires !1\n  }\n}\n").expect("parses");
+    let diagnostics = check(&literal);
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code, "MORVA2013");
+}
+
+#[test]
+fn negation_is_accepted_in_every_predicate_position() {
+    let source = r#"system Shop {
+  entity Order {
+    paid: Boolean
+    open: Boolean
+    invariant !(open == false)
+  }
+  action Close(order: Order) {
+    requires !order.paid
+    effects order.open = false
+    ensures !order.open
+  }
+  scenario CloseIt {
+    given order.paid = false
+    given order.open = true
+    run Close(order)
+    expect !order.open
+  }
+}
+"#;
+    let document = parse(source).expect("parses");
+    assert!(check(&document).is_empty());
+}

@@ -442,6 +442,31 @@ impl Parser {
     }
 
     fn expression(&mut self) -> Result<Expr, Vec<Diagnostic>> {
+        if self.at_symbol('!') {
+            let operator_span = self.bump().span;
+            let operand = self.expression()?;
+            let span = Span::covering(operator_span, operand.span);
+            return Ok(Expr {
+                kind: ExprKind::Not(Box::new(operand)),
+                span,
+            });
+        }
+        if self.at_symbol('(') {
+            let opening = self.bump().span;
+            let inner = self.expression()?;
+            if !self.at_symbol(')') {
+                return Err(self.error("MORVA1026", "expected ')' to close the grouped predicate"));
+            }
+            let closing = self.bump().span;
+            return Ok(Expr {
+                kind: inner.kind,
+                span: Span::covering(opening, closing),
+            });
+        }
+        self.comparison()
+    }
+
+    fn comparison(&mut self) -> Result<Expr, Vec<Diagnostic>> {
         let left = self.primary()?;
         let operator = if self.at_operator("==") {
             Some(BinaryOperator::Equal)

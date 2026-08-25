@@ -476,6 +476,7 @@ impl RebaseSpans for Expr {
                 left.rebase_spans(base)?;
                 right.rebase_spans(base)
             }
+            ExprKind::Not(operand) => operand.rebase_spans(base),
             ExprKind::Integer(_) | ExprKind::Boolean(_) => Some(()),
         }
     }
@@ -491,6 +492,7 @@ pub enum ExprKind {
         operator: BinaryOperator,
         right: Box<Expr>,
     },
+    Not(Box<Expr>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

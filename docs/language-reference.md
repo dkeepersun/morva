@@ -129,17 +129,19 @@ left > right
 left >= right
 left < right
 left <= right
+!predicate
+(predicate)
 ```
 
-没有算术表达式、逻辑连接、括号优先级、字符串字面量、调用表达式或集合。二元表达式不递归组合；不要根据未来预期自行扩展 grammar。
+比较的两个操作数仍限于字面量与路径（不递归）。谓词层递归组合仅限取反与括号：比较先构成 Boolean proposition，随后 `!` 取反——`!order.status == Pending` 等价于 `!(order.status == Pending)`；括号把内部内容作为一个完整 Boolean predicate，多余但平衡的嵌套括号不改变结果；连续 `!` 允许任意深度。`!` 只作为谓词取反操作符，`!=` 的词法与语义完全不变。空括号报 `MORVA1013`，未闭合括号报 `MORVA1026`。没有析取、算术表达式、字符串字面量、调用表达式或集合；不要根据未来预期自行扩展 grammar。
 
-谓词必须产生 Boolean。`==/!=` 要求两侧是同一 canonical 标量或同一 enum；`<`、`<=`、`>`、`>=` 只接受 Integer 或 Decimal。非负 Integer 字面量在明确的 Decimal 比较或赋值上下文中是精确 Decimal 常量，例如 `balance >= 0` 和 `effects account.balance = 0` 合法；Integer 路径与 Decimal 路径之间没有隐式转换。Entity 只能作为字段路径中间类型，不能整体比较或赋值。
+谓词必须产生 Boolean，`!` 的操作数同样必须产生 Boolean（否则 `MORVA2013`）。`==/!=` 要求两侧是同一 canonical 标量或同一 enum；`<`、`<=`、`>`、`>=` 只接受 Integer 或 Decimal。非负 Integer 字面量在明确的 Decimal 比较或赋值上下文中是精确 Decimal 常量，例如 `balance >= 0` 和 `effects account.balance = 0` 合法；Integer 路径与 Decimal 路径之间没有隐式转换。Entity 只能作为字段路径中间类型，不能整体比较或赋值。
 
 ### 明显矛盾检查
 
 引用和类型检查成功后，checker 会保守识别 action 中无需符号执行即可确定的字面量矛盾：恒假的 Boolean/Integer 常量比较、同一状态阶段中同一路径的互斥 `==`/`!=` 精确值事实，以及最终已知直接字面量 `=` effect 与后置事实的冲突。`requires + action invariant` 形成前态事实组，`action invariant + ensures` 形成独立的后态事实组；合法的前后状态变化不会被合并。
 
-Effects 仍按源码顺序解释。每个路径最后一次直接字面量 `=` 可形成已知最终值；非字面量 `=` 或 `+=/-=` 会把该路径降为未知，后续直接字面量 `=` 可以恢复已知。当前不做有序区间求解、entity invariant 参数实例化、scenario/action 内联、未写路径跨阶段推理或 compound effect 折叠，因此未报告不代表已证明可满足。
+Effects 仍按源码顺序解释。每个路径最后一次直接字面量 `=` 可形成已知最终值；非字面量 `=` 或 `+=/-=` 会把该路径降为未知，后续直接字面量 `=` 可以恢复已知。含 `!` 的谓词当前不参与矛盾事实推导。当前不做有序区间求解、entity invariant 参数实例化、scenario/action 内联、未写路径跨阶段推理或 compound effect 折叠，因此未报告不代表已证明可满足。
 
 ## 5. 兼容容器
 
