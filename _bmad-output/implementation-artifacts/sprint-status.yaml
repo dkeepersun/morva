@@ -70,7 +70,7 @@ development_status:
   epic-4: in-progress
   4-1-机器读取-check-结果与诊断: done
   4-2-机器读取结构化-ast: done
-  4-3-机器读取语义摘要与能力清单: backlog
+  4-3-机器读取语义摘要与能力清单: done
   4-4-机器读取七阶段模拟报告: backlog
   epic-4-retrospective: optional
 

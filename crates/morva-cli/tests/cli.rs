@@ -1451,3 +1451,72 @@ fn json_parse_marks_the_merged_project_system_as_synthetic() {
     assert!(output.stderr.is_empty());
     assert!(text(&output.stdout).contains("\"severity\": \"error\""));
 }
+
+#[test]
+fn json_inspect_separates_modeled_and_unmodeled_classifications() {
+    let project = temporary_project("json-inspect");
+    write_project_source(
+        &project,
+        "10-first.morva",
+        b"system Shop {\n  policy Refunds {}\n  entity Order { open: Boolean }\n}\n",
+    );
+    write_project_source(
+        &project,
+        "20-second.morva",
+        b"system Shop {\n  action Close(order: Order) {\n    retry 2\n    requires order.open\n  }\n}\n",
+    );
+    let path = project.to_str().unwrap();
+    let first = morva(&["inspect", "--format", "json", path]);
+    let second = morva(&["inspect", "--format", "json", path]);
+    assert!(first.status.success(), "{}", text(&first.stderr));
+    assert!(first.stderr.is_empty());
+    assert_eq!(first.stdout, second.stdout, "byte-identical repeats");
+    let stdout = text(&first.stdout);
+    assert!(stdout.contains("\"command\": \"inspect\""));
+    assert!(stdout.contains("\"success\": true"));
+    assert!(stdout.contains("\"item_count\": 2"));
+    assert!(stdout.contains("\"container_kind\": \"policy\""));
+    assert!(stdout.contains("\"behavior\": \"retry\""));
+    assert!(stdout.contains("10-first.morva\""));
+    assert!(stdout.contains("20-second.morva\""));
+    assert!(stdout.contains("\"severity\": \"warning\""));
+    assert!(stdout.contains("\"soft_behavior_count\": 1"));
+    assert!(!stdout.contains("virtual"));
+
+    let clean = temporary_model("json-inspect-clean", b"system Shop {}\n");
+    let output = morva(&["inspect", "--format", "json", clean.to_str().unwrap()]);
+    fs::remove_file(&clean).expect("remove fixture");
+    assert!(output.status.success());
+    let stdout = text(&output.stdout);
+    assert!(stdout.contains("\"item_count\": 0"));
+    assert!(stdout.contains("\"diagnostics\": []"));
+}
+
+#[test]
+fn json_capabilities_serializes_the_same_core_inventory() {
+    let first = morva(&["capabilities", "--format", "json"]);
+    let second = morva(&["capabilities", "--format", "json"]);
+    assert!(first.status.success());
+    assert!(first.stderr.is_empty());
+    assert_eq!(first.stdout, second.stdout, "byte-identical repeats");
+    let stdout = text(&first.stdout);
+    assert!(stdout.contains("\"command\": \"capabilities\""));
+    assert!(stdout.contains("\"schema_version\": 1"));
+    assert!(stdout.contains("\"version\": 1"));
+    for fragment in [
+        "\"declarations\": [\n      \"system\",",
+        "\"comparison_operators\": [\n      \"==\",",
+        "\"simulation_phases\": [\n      \"givens\",",
+        "\"compatibility_containers\": [\n      \"module\",",
+        "\"soft_behaviors\": [\n      \"atomic\",",
+        "\"unsupported\": [",
+        "\"alias\": \"Bool\"",
+    ] {
+        assert!(stdout.contains(fragment), "missing {fragment}");
+    }
+    // The JSON view consumes the same core inventory as the human view.
+    let human = morva(&["capabilities"]);
+    let human_text = text(&human.stdout);
+    assert!(human_text.contains("declarations: system, entity, enum, action, scenario"));
+    assert!(stdout.contains("\"scenario\"\n    ],"));
+}

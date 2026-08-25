@@ -63,8 +63,9 @@ Invalid input diagnostics include a stable code, line and column, and a source m
 
 ## Machine output
 
-`check` and `parse` accept `--format json`. Machine output writes exactly one
-versioned JSON envelope to stdout and nothing to stderr:
+`check`, `parse`, `inspect`, and `capabilities` accept `--format json`. Machine
+output writes exactly one versioned JSON envelope to stdout and nothing to
+stderr:
 
 ```json
 { "protocol": "morva.cli", "schema_version": 1, "command": "check", "success": true, "diagnostics": [] }
@@ -92,6 +93,19 @@ is synthetic and reports `location: null` instead of impersonating one file.
 Skipped compatibility and implementation-hint bodies are never echoed. The AST
 JSON is a read-only structured view; it is not a lossless serialization of the
 original `.morva` source.
+
+`inspect --format json` carries both `diagnostics` (the same coverage warnings
+as `check`) and a separate `summary`: modeled declarations with per-kind counts,
+and `unmodeled` compatibility containers and soft behaviors with structured
+classification, names, real source identity, and file-local spans — never
+skipped body text. Warning-only models keep `success: true` and exit `0`.
+
+`capabilities --format json` serializes the same core capability inventory as
+the human command, without reading any model file. The envelope carries two
+versions with distinct meanings: `schema_version` is the morva.cli JSON
+protocol version, and `capabilities.version` is the reviewed capability-model
+version from `morva_core::capabilities()`; either changes only with its own
+reviewed contract change.
 
 ## Planned, not implemented
 

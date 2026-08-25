@@ -54,6 +54,8 @@ fn main() -> ExitCode {
         }
         ([command, path], OutputFormat::Json) if command == "check" => run_check_json(path),
         ([command, path], OutputFormat::Json) if command == "parse" => run_parse_json(path),
+        ([command, path], OutputFormat::Json) if command == "inspect" => run_inspect_json(path),
+        ([command], OutputFormat::Json) if command == "capabilities" => run_capabilities_json(),
         (rest, OutputFormat::Json) => {
             let command = rest.first().map(String::as_str).unwrap_or("");
             machine_error(command, "usage", "unsupported machine command or arguments")
@@ -1317,7 +1319,7 @@ fn print_capabilities() {
 
 fn help() {
     println!(
-        "Morva semantic model tools\n\nUsage:\n  morva check [--format json] <file-or-directory>\n  morva parse [--format json] <file-or-directory>\n  morva inspect <file-or-directory>\n  morva simulate <file-or-directory> <scenario>\n  morva capabilities\n  morva help"
+        "Morva semantic model tools\n\nUsage:\n  morva check [--format json] <file-or-directory>\n  morva parse [--format json] <file-or-directory>\n  morva inspect [--format json] <file-or-directory>\n  morva simulate <file-or-directory> <scenario>\n  morva capabilities [--format json]\n  morva help"
     );
 }
 
@@ -1699,4 +1701,291 @@ fn ast_expression_json(expression: &Expr, locator: &Locator<'_>) -> Json {
             ("location", locator.location(expression.span)),
         ]),
     }
+}
+
+fn run_inspect_json(path: &str) -> ExitCode {
+    let model = match load_checked_model(path) {
+        Ok(model) => model,
+        Err(failure) => return load_failure_machine("inspect", failure),
+    };
+    // (severity, code, message, path, local span, structured kind)
+    let mut unmodeled_containers = Vec::new();
+    let mut unmodeled_behaviors = Vec::new();
+    let mut diagnostics = Vec::new();
+    match &model {
+        LoadedModel::Single { source, document } => {
+            let report = analyze(document);
+            let path = source.path.to_string_lossy();
+            for notice in &report.notices {
+                diagnostics.push(machine_diagnostic(
+                    "warning",
+                    notice.code,
+                    &notice.message,
+                    Some((&path, &source.source, notice.span)),
+                ));
+                push_unmodeled(
+                    &notice.kind,
+                    &path,
+                    &source.source,
+                    notice.span,
+                    &mut unmodeled_containers,
+                    &mut unmodeled_behaviors,
+                );
+            }
+        }
+        LoadedModel::Project { sources, project } => {
+            let report = project.analyze();
+            for notice in &report.notices {
+                let source = &sources[notice.source_id.0];
+                let path = source.path.to_string_lossy();
+                diagnostics.push(machine_diagnostic(
+                    "warning",
+                    notice.local_notice.code,
+                    &notice.local_notice.message,
+                    Some((&path, &source.source, notice.local_notice.span)),
+                ));
+                push_unmodeled(
+                    &notice.local_notice.kind,
+                    &path,
+                    &source.source,
+                    notice.local_notice.span,
+                    &mut unmodeled_containers,
+                    &mut unmodeled_behaviors,
+                );
+            }
+        }
+    }
+
+    let document = model.document();
+    let mut enumerations = Vec::new();
+    let mut entities = Vec::new();
+    let mut actions = Vec::new();
+    let mut scenarios = Vec::new();
+    collect_semantic_items(
+        &document.declarations,
+        &mut enumerations,
+        &mut entities,
+        &mut actions,
+        &mut scenarios,
+    );
+    let system = document
+        .declarations
+        .iter()
+        .find_map(|item| match item {
+            Declaration::System(system) => Some(system.name.text.as_str()),
+            _ => None,
+        })
+        .expect("checked document has one system");
+
+    let modeled = Json::Object(vec![
+        (
+            "enums",
+            Json::Array(
+                enumerations
+                    .iter()
+                    .map(|enumeration| {
+                        Json::Object(vec![
+                            ("name", Json::string(&enumeration.name.text)),
+                            ("member_count", Json::UInt(enumeration.members.len() as u64)),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
+        (
+            "entities",
+            Json::Array(
+                entities
+                    .iter()
+                    .map(|entity| {
+                        Json::Object(vec![
+                            ("name", Json::string(&entity.name.text)),
+                            ("field_count", Json::UInt(entity.fields.len() as u64)),
+                            (
+                                "invariant_count",
+                                Json::UInt(entity.invariants.len() as u64),
+                            ),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
+        (
+            "actions",
+            Json::Array(
+                actions
+                    .iter()
+                    .map(|action| {
+                        let counts = |kind| {
+                            action
+                                .clauses
+                                .iter()
+                                .filter(|clause| clause.kind == kind)
+                                .map(|clause| clause.expressions.len())
+                                .sum::<usize>() as u64
+                        };
+                        Json::Object(vec![
+                            ("name", Json::string(&action.name.text)),
+                            (
+                                "parameter_count",
+                                Json::UInt(action.parameters.len() as u64),
+                            ),
+                            (
+                                "requires",
+                                Json::UInt(counts(morva_core::ClauseKind::Requires)),
+                            ),
+                            (
+                                "effects",
+                                Json::UInt(counts(morva_core::ClauseKind::Effects)),
+                            ),
+                            (
+                                "ensures",
+                                Json::UInt(counts(morva_core::ClauseKind::Ensures)),
+                            ),
+                            (
+                                "invariants",
+                                Json::UInt(counts(morva_core::ClauseKind::Invariant)),
+                            ),
+                            (
+                                "soft_behavior_count",
+                                Json::UInt(action.soft_behaviors.len() as u64),
+                            ),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
+        (
+            "scenarios",
+            Json::Array(
+                scenarios
+                    .iter()
+                    .map(|scenario| {
+                        let givens = scenario
+                            .items
+                            .iter()
+                            .filter(|item| matches!(item, ScenarioItem::Given(_)))
+                            .count() as u64;
+                        let expects = scenario
+                            .items
+                            .iter()
+                            .filter(|item| matches!(item, ScenarioItem::Expect(_)))
+                            .count() as u64;
+                        Json::Object(vec![
+                            ("name", Json::string(&scenario.name.text)),
+                            ("given_count", Json::UInt(givens)),
+                            ("run_count", Json::UInt(1)),
+                            ("expect_count", Json::UInt(expects)),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
+    ]);
+    let container_count = unmodeled_containers.len() as u64;
+    let behavior_count = unmodeled_behaviors.len() as u64;
+    let summary = Json::Object(vec![
+        ("system", Json::string(system)),
+        ("modeled", modeled),
+        (
+            "unmodeled",
+            Json::Object(vec![
+                ("item_count", Json::UInt(container_count + behavior_count)),
+                ("compatibility_container_count", Json::UInt(container_count)),
+                (
+                    "compatibility_containers",
+                    Json::Array(unmodeled_containers),
+                ),
+                ("action_soft_behavior_count", Json::UInt(behavior_count)),
+                ("action_soft_behaviors", Json::Array(unmodeled_behaviors)),
+            ]),
+        ),
+    ]);
+    emit_machine(&machine_envelope(
+        "inspect",
+        true,
+        vec![
+            ("diagnostics", Json::Array(diagnostics)),
+            ("summary", summary),
+        ],
+    ));
+    ExitCode::SUCCESS
+}
+
+fn push_unmodeled(
+    kind: &NoticeKind,
+    path: &str,
+    source: &str,
+    span: Span,
+    containers: &mut Vec<Json>,
+    behaviors: &mut Vec<Json>,
+) {
+    let (line, column, _) = location(source, span.start);
+    let entry_location = location_json(path, line, column, span);
+    match kind {
+        NoticeKind::CompatibilityContainer { kind, name } => containers.push(Json::Object(vec![
+            ("container_kind", Json::string(kind)),
+            ("name", Json::string(name)),
+            ("location", entry_location),
+        ])),
+        NoticeKind::ActionSoftBehavior { action, behavior } => behaviors.push(Json::Object(vec![
+            ("action", Json::string(action)),
+            ("behavior", Json::string(behavior.as_str())),
+            ("location", entry_location),
+        ])),
+    }
+}
+
+fn run_capabilities_json() -> ExitCode {
+    let inventory = morva_core::capabilities();
+    let strings =
+        |items: &[&'static str]| Json::Array(items.iter().map(|item| Json::string(item)).collect());
+    let capabilities = Json::Object(vec![
+        ("version", Json::UInt(u64::from(inventory.version))),
+        ("declarations", strings(&inventory.declarations)),
+        ("clause_kinds", strings(&inventory.clause_kinds)),
+        ("expression_forms", strings(&inventory.expression_forms)),
+        (
+            "comparison_operators",
+            strings(&inventory.comparison_operators),
+        ),
+        (
+            "assignment_operators",
+            strings(&inventory.assignment_operators),
+        ),
+        ("literals", strings(&inventory.literals)),
+        ("builtin_types", strings(&inventory.builtin_types)),
+        (
+            "builtin_type_aliases",
+            Json::Array(
+                inventory
+                    .builtin_type_aliases
+                    .iter()
+                    .map(|(alias, canonical)| {
+                        Json::Object(vec![
+                            ("alias", Json::string(alias)),
+                            ("canonical", Json::string(canonical)),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ),
+        (
+            "simulation_value_types",
+            strings(&inventory.simulation_value_types),
+        ),
+        ("simulation_phases", strings(&inventory.simulation_phases)),
+        (
+            "compatibility_containers",
+            strings(&inventory.compatibility_containers),
+        ),
+        ("soft_behaviors", strings(&inventory.soft_behaviors)),
+        ("unsupported", strings(&inventory.unsupported)),
+    ]);
+    emit_machine(&machine_envelope(
+        "capabilities",
+        true,
+        vec![("capabilities", capabilities)],
+    ));
+    ExitCode::SUCCESS
 }
