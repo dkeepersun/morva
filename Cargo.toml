@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/morva-core", "crates/morva-cli"]
+members = ["crates/morva-core", "crates/morva-machine", "crates/morva-cli"]
 resolver = "2"
 
 [workspace.package]

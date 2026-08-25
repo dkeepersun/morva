@@ -7,8 +7,16 @@ name = "morva-cli"
 version = "0.1.0"
 dependencies = [
  "morva-core",
+ "morva-machine",
 ]
 
 [[package]]
 name = "morva-core"
 version = "0.1.0"
+
+[[package]]
+name = "morva-machine"
+version = "0.1.0"
+dependencies = [
+ "morva-core",
+]

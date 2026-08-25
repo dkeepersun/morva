@@ -1,16 +1,10 @@
 [package]
-name = "morva-cli"
+name = "morva-machine"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
-[[bin]]
-name = "morva"
-path = "src/main.rs"
-
 [dependencies]
 morva-core = { path = "../morva-core" }
-morva-machine = { path = "../morva-machine" }
-

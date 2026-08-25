@@ -60,6 +60,7 @@ jobs:
               cargo test -p morva-core --locked --test simulation
               ;;
             cli-process)
+              cargo test -p morva-machine --locked --all-targets
               cargo test -p morva-cli --locked --all-targets
               ;;
             *)

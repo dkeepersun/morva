@@ -10,9 +10,7 @@ use morva_core::{
     Expr, ExprKind, Notice, NoticeKind, Project, ProjectDiagnostic, ProjectFinding, Scenario,
     ScenarioItem, SimulationReport, Span, analyze, check, parse, simulate,
 };
-
-const MACHINE_PROTOCOL: &str = "morva.cli";
-const MACHINE_SCHEMA_VERSION: u64 = 1;
+use morva_machine::{MachineModel, NamedSource};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum OutputFormat {
@@ -86,72 +84,17 @@ fn extract_format(args: &mut Vec<String>) -> Result<OutputFormat, ()> {
     Ok(OutputFormat::Json)
 }
 
-fn machine_envelope(command: &str, success: bool, extra: Vec<(&'static str, Json)>) -> Json {
-    let mut members = vec![
-        ("protocol", Json::string(MACHINE_PROTOCOL)),
-        ("schema_version", Json::UInt(MACHINE_SCHEMA_VERSION)),
-        ("command", Json::string(command)),
-        ("success", Json::Bool(success)),
-    ];
-    members.extend(extra);
-    Json::Object(members)
-}
-
 fn emit_machine(envelope: &Json) {
-    let mut out = String::new();
-    envelope.write(&mut out, 0);
-    println!("{out}");
+    print!("{}", morva_machine::render(envelope));
 }
 
 fn machine_error(command: &str, kind: &str, message: &str) -> ExitCode {
-    emit_machine(&machine_envelope(
-        command,
-        false,
-        vec![(
-            "error",
-            Json::Object(vec![
-                ("kind", Json::string(kind)),
-                ("message", Json::string(message)),
-            ]),
-        )],
-    ));
+    emit_machine(&morva_machine::error_envelope(command, kind, message));
     ExitCode::from(2)
 }
 
-fn machine_diagnostic(
-    severity: &str,
-    code: &str,
-    message: &str,
-    location: Option<(&str, &str, Span)>,
-) -> Json {
-    let location = match location {
-        None => Json::Null,
-        Some((path, source, span)) => {
-            let (line, column, _) = self::location(source, span.start);
-            Json::Object(vec![
-                ("source", Json::string(path)),
-                ("line", Json::UInt(line as u64)),
-                ("column", Json::UInt(column as u64)),
-                (
-                    "span",
-                    Json::Object(vec![
-                        ("start", Json::UInt(span.start as u64)),
-                        ("end", Json::UInt(span.end as u64)),
-                    ]),
-                ),
-            ])
-        }
-    };
-    Json::Object(vec![
-        ("severity", Json::string(severity)),
-        ("code", Json::string(code)),
-        ("message", Json::string(message)),
-        ("location", location),
-    ])
-}
-
 fn machine_diagnostics_exit(command: &str, success: bool, diagnostics: Vec<Json>) -> ExitCode {
-    emit_machine(&machine_envelope(
+    emit_machine(&morva_machine::envelope(
         command,
         success,
         vec![("diagnostics", Json::Array(diagnostics))],
@@ -171,54 +114,66 @@ fn load_failure_machine(command: &str, failure: LoadFailure) -> ExitCode {
             source,
             diagnostics,
         } => {
-            let path = path.to_string_lossy();
-            let items = diagnostics
-                .iter()
-                .map(|diagnostic| {
-                    machine_diagnostic(
-                        "error",
-                        diagnostic.code,
-                        &diagnostic.message,
-                        Some((&path, &source, diagnostic.span)),
-                    )
-                })
-                .collect();
+            let name = path.to_string_lossy().into_owned();
+            let items = morva_machine::single_parse_diagnostics(
+                &NamedSource {
+                    name: &name,
+                    text: &source,
+                },
+                &diagnostics,
+            );
             machine_diagnostics_exit(command, false, items)
         }
         LoadFailure::ProjectModel {
             sources,
             diagnostics,
         } => {
-            let items = diagnostics
-                .iter()
-                .map(|diagnostic| project_diagnostic_json(&sources, diagnostic))
-                .collect();
+            let names = source_names(&sources);
+            let named = named_sources(&sources, &names);
+            let items = morva_machine::project_parse_diagnostics(&named, &diagnostics);
             machine_diagnostics_exit(command, false, items)
         }
     }
 }
 
-fn project_diagnostic_json(sources: &[CliSource], diagnostic: &ProjectDiagnostic) -> Json {
-    match diagnostic {
-        ProjectDiagnostic::Project { diagnostic } => {
-            machine_diagnostic("error", diagnostic.code, &diagnostic.message, None)
-        }
-        ProjectDiagnostic::Source {
-            source_id,
-            local_diagnostic,
-        } => {
-            let source = &sources[source_id.0];
-            machine_diagnostic(
-                "error",
-                local_diagnostic.code,
-                &local_diagnostic.message,
-                Some((
-                    &source.path.to_string_lossy(),
-                    &source.source,
-                    local_diagnostic.span,
-                )),
-            )
-        }
+fn source_names(sources: &[CliSource]) -> Vec<String> {
+    sources
+        .iter()
+        .map(|source| source.path.to_string_lossy().into_owned())
+        .collect()
+}
+
+fn named_sources<'a>(sources: &'a [CliSource], names: &'a [String]) -> Vec<NamedSource<'a>> {
+    sources
+        .iter()
+        .zip(names)
+        .map(|(source, name)| NamedSource {
+            name,
+            text: &source.source,
+        })
+        .collect()
+}
+
+fn model_names(model: &LoadedModel) -> Vec<String> {
+    match model {
+        LoadedModel::Single { source, .. } => vec![source.path.to_string_lossy().into_owned()],
+        LoadedModel::Project { sources, .. } => source_names(sources),
+    }
+}
+
+fn machine_model<'a>(model: &'a LoadedModel, names: &'a [String]) -> MachineModel<'a> {
+    match model {
+        LoadedModel::Single { source, document } => MachineModel::Single {
+            source: NamedSource {
+                name: &names[0],
+                text: &source.source,
+            },
+            document,
+        },
+        LoadedModel::Project { sources, project } => MachineModel::Project {
+            sources: named_sources(sources, names),
+            project,
+        },
     }
 }
 
@@ -227,55 +182,70 @@ fn run_check_json(path: &str) -> ExitCode {
         Ok(model) => model,
         Err(failure) => return load_failure_machine("check", failure),
     };
-    match &model {
-        LoadedModel::Single { source, document } => {
-            let report = analyze(document);
-            let path = source.path.to_string_lossy();
-            let items = report
-                .findings()
-                .iter()
-                .map(|finding| match finding {
-                    AnalysisFinding::Error(error) => machine_diagnostic(
-                        "error",
-                        error.code,
-                        &error.message,
-                        Some((&path, &source.source, error.span)),
-                    ),
-                    AnalysisFinding::Notice(notice) => machine_diagnostic(
-                        "warning",
-                        notice.code,
-                        &notice.message,
-                        Some((&path, &source.source, notice.span)),
-                    ),
-                })
-                .collect();
-            machine_diagnostics_exit("check", !report.has_errors(), items)
+    let names = model_names(&model);
+    let (success, items) = morva_machine::check_result(&machine_model(&model, &names));
+    machine_diagnostics_exit("check", success, items)
+}
+
+fn run_parse_json(path: &str) -> ExitCode {
+    let model = match load_checked_model(path) {
+        Ok(model) => model,
+        Err(failure) => return load_failure_machine("parse", failure),
+    };
+    let names = model_names(&model);
+    let ast = morva_machine::ast(&machine_model(&model, &names));
+    emit_machine(&morva_machine::envelope("parse", true, vec![("ast", ast)]));
+    ExitCode::SUCCESS
+}
+
+fn run_inspect_json(path: &str) -> ExitCode {
+    let model = match load_checked_model(path) {
+        Ok(model) => model,
+        Err(failure) => return load_failure_machine("inspect", failure),
+    };
+    let names = model_names(&model);
+    let (diagnostics, summary) = morva_machine::inspect(&machine_model(&model, &names));
+    emit_machine(&morva_machine::envelope(
+        "inspect",
+        true,
+        vec![
+            ("diagnostics", Json::Array(diagnostics)),
+            ("summary", summary),
+        ],
+    ));
+    ExitCode::SUCCESS
+}
+
+fn run_capabilities_json() -> ExitCode {
+    emit_machine(&morva_machine::envelope(
+        "capabilities",
+        true,
+        vec![("capabilities", morva_machine::capabilities())],
+    ));
+    ExitCode::SUCCESS
+}
+
+fn run_simulation_json(path: &str, scenario: &str) -> ExitCode {
+    let model = match load_checked_model(path) {
+        Ok(model) => model,
+        Err(failure) => return load_failure_machine("simulate", failure),
+    };
+    let names = model_names(&model);
+    match morva_machine::simulate_report(&machine_model(&model, &names), scenario) {
+        morva_machine::SimulateOutcome::Selection(item) => {
+            machine_diagnostics_exit("simulate", false, vec![item])
         }
-        LoadedModel::Project { sources, project } => {
-            let report = project.analyze();
-            let items = report
-                .findings()
-                .iter()
-                .map(|finding| match finding {
-                    ProjectFinding::Error(diagnostic) => {
-                        project_diagnostic_json(sources, diagnostic)
-                    }
-                    ProjectFinding::Notice(notice) => {
-                        let source = &sources[notice.source_id.0];
-                        machine_diagnostic(
-                            "warning",
-                            notice.local_notice.code,
-                            &notice.local_notice.message,
-                            Some((
-                                &source.path.to_string_lossy(),
-                                &source.source,
-                                notice.local_notice.span,
-                            )),
-                        )
-                    }
-                })
-                .collect();
-            machine_diagnostics_exit("check", !report.has_errors(), items)
+        morva_machine::SimulateOutcome::Report { success, report } => {
+            emit_machine(&morva_machine::envelope(
+                "simulate",
+                success,
+                vec![("diagnostics", Json::Array(Vec::new())), ("report", report)],
+            ));
+            if success {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
         }
     }
 }
@@ -1324,844 +1294,4 @@ fn help() {
     println!(
         "Morva semantic model tools\n\nUsage:\n  morva check [--format json] <file-or-directory>\n  morva parse [--format json] <file-or-directory>\n  morva inspect [--format json] <file-or-directory>\n  morva simulate [--format json] <file-or-directory> <scenario>\n  morva capabilities [--format json]\n  morva help"
     );
-}
-
-enum Locator<'a> {
-    Single {
-        path: String,
-        source: &'a str,
-    },
-    Project {
-        sources: &'a [CliSource],
-        project: &'a Project,
-    },
-}
-
-impl Locator<'_> {
-    fn try_location(&self, span: Span) -> Option<Json> {
-        match self {
-            Self::Single { path, source } => {
-                let (line, column, _) = location(source, span.start);
-                Some(location_json(path, line, column, span))
-            }
-            Self::Project { sources, project } => {
-                let local = project.locate_virtual_span(span)?;
-                let source = &sources[local.source_id.0];
-                let (line, column, _) = location(&source.source, local.local_span.start);
-                Some(location_json(
-                    &source.path.to_string_lossy(),
-                    line,
-                    column,
-                    local.local_span,
-                ))
-            }
-        }
-    }
-
-    fn location(&self, span: Span) -> Json {
-        match self {
-            Self::Single { path, source } => {
-                let (line, column, _) = location(source, span.start);
-                location_json(path, line, column, span)
-            }
-            Self::Project { sources, project } => {
-                let local = project
-                    .locate_virtual_span(span)
-                    .expect("assembled AST span maps to a source");
-                let source = &sources[local.source_id.0];
-                let (line, column, _) = location(&source.source, local.local_span.start);
-                location_json(
-                    &source.path.to_string_lossy(),
-                    line,
-                    column,
-                    local.local_span,
-                )
-            }
-        }
-    }
-}
-
-fn location_json(path: &str, line: usize, column: usize, span: Span) -> Json {
-    Json::Object(vec![
-        ("source", Json::string(path)),
-        ("line", Json::UInt(line as u64)),
-        ("column", Json::UInt(column as u64)),
-        (
-            "span",
-            Json::Object(vec![
-                ("start", Json::UInt(span.start as u64)),
-                ("end", Json::UInt(span.end as u64)),
-            ]),
-        ),
-    ])
-}
-
-fn run_parse_json(path: &str) -> ExitCode {
-    let model = match load_checked_model(path) {
-        Ok(model) => model,
-        Err(failure) => return load_failure_machine("parse", failure),
-    };
-    let (locator, system_location) = match &model {
-        LoadedModel::Single { source, document } => {
-            let locator = Locator::Single {
-                path: source.path.to_string_lossy().into_owned(),
-                source: &source.source,
-            };
-            let system_span = document
-                .declarations
-                .iter()
-                .find_map(|declaration| match declaration {
-                    Declaration::System(system) => Some(system.span),
-                    _ => None,
-                })
-                .expect("checked document has one system");
-            let system_location = locator.location(system_span);
-            (locator, system_location)
-        }
-        LoadedModel::Project { sources, project } => (
-            Locator::Project { sources, project },
-            // The merged system shell is synthetic; it never claims one
-            // real source location.
-            Json::Null,
-        ),
-    };
-    let document = model.document();
-    let system = document
-        .declarations
-        .iter()
-        .find_map(|declaration| match declaration {
-            Declaration::System(system) => Some(system),
-            _ => None,
-        })
-        .expect("checked document has one system");
-    let ast = Json::Object(vec![
-        ("kind", Json::string("system")),
-        ("name", Json::string(&system.name.text)),
-        ("location", system_location),
-        (
-            "declarations",
-            Json::Array(
-                system
-                    .declarations
-                    .iter()
-                    .map(|declaration| ast_declaration_json(declaration, &locator))
-                    .collect(),
-            ),
-        ),
-    ]);
-    emit_machine(&machine_envelope("parse", true, vec![("ast", ast)]));
-    ExitCode::SUCCESS
-}
-
-fn ast_declaration_json(declaration: &Declaration, locator: &Locator<'_>) -> Json {
-    match declaration {
-        Declaration::System(system) => Json::Object(vec![
-            ("kind", Json::string("system")),
-            ("name", Json::string(&system.name.text)),
-            ("location", locator.location(system.name.span)),
-        ]),
-        Declaration::Container(container) => Json::Object(vec![
-            ("kind", Json::string("container")),
-            ("container_kind", Json::string(&container.kind)),
-            ("name", Json::string(&container.name.text)),
-            ("location", locator.location(container.name.span)),
-            (
-                "declarations",
-                Json::Array(
-                    container
-                        .declarations
-                        .iter()
-                        .map(|declaration| ast_declaration_json(declaration, locator))
-                        .collect(),
-                ),
-            ),
-        ]),
-        Declaration::Enum(enumeration) => Json::Object(vec![
-            ("kind", Json::string("enum")),
-            ("name", Json::string(&enumeration.name.text)),
-            ("location", locator.location(enumeration.span)),
-            (
-                "members",
-                Json::Array(
-                    enumeration
-                        .members
-                        .iter()
-                        .map(|member| {
-                            Json::Object(vec![
-                                ("name", Json::string(&member.text)),
-                                ("location", locator.location(member.span)),
-                            ])
-                        })
-                        .collect(),
-                ),
-            ),
-        ]),
-        Declaration::Entity(entity) => Json::Object(vec![
-            ("kind", Json::string("entity")),
-            ("name", Json::string(&entity.name.text)),
-            ("location", locator.location(entity.span)),
-            (
-                "fields",
-                Json::Array(
-                    entity
-                        .fields
-                        .iter()
-                        .map(|field| {
-                            Json::Object(vec![
-                                ("name", Json::string(&field.name.text)),
-                                ("type", Json::string(&field.type_name.text)),
-                                ("location", locator.location(field.span)),
-                            ])
-                        })
-                        .collect(),
-                ),
-            ),
-            (
-                "invariants",
-                Json::Array(
-                    entity
-                        .invariants
-                        .iter()
-                        .map(|invariant| ast_expression_json(invariant, locator))
-                        .collect(),
-                ),
-            ),
-        ]),
-        Declaration::Action(action) => Json::Object(vec![
-            ("kind", Json::string("action")),
-            ("name", Json::string(&action.name.text)),
-            ("location", locator.location(action.span)),
-            (
-                "parameters",
-                Json::Array(
-                    action
-                        .parameters
-                        .iter()
-                        .map(|parameter| {
-                            Json::Object(vec![
-                                ("name", Json::string(&parameter.name.text)),
-                                ("type", Json::string(&parameter.type_name.text)),
-                                ("location", locator.location(parameter.span)),
-                            ])
-                        })
-                        .collect(),
-                ),
-            ),
-            (
-                "soft_behaviors",
-                Json::Array(
-                    action
-                        .soft_behaviors
-                        .iter()
-                        .map(|behavior| {
-                            Json::Object(vec![
-                                ("behavior", Json::string(behavior.kind.as_str())),
-                                ("location", locator.location(behavior.span)),
-                            ])
-                        })
-                        .collect(),
-                ),
-            ),
-            (
-                "clauses",
-                Json::Array(
-                    action
-                        .clauses
-                        .iter()
-                        .map(|clause| {
-                            Json::Object(vec![
-                                ("kind", Json::string("clause")),
-                                ("clause_kind", Json::string(clause.kind.as_str())),
-                                (
-                                    "expressions",
-                                    Json::Array(
-                                        clause
-                                            .expressions
-                                            .iter()
-                                            .map(|expression| match expression {
-                                                ClauseExpression::Predicate(predicate) => {
-                                                    Json::Object(vec![
-                                                        ("kind", Json::string("predicate")),
-                                                        (
-                                                            "expression",
-                                                            ast_expression_json(predicate, locator),
-                                                        ),
-                                                    ])
-                                                }
-                                                ClauseExpression::Assignment(assignment) => {
-                                                    Json::Object(vec![
-                                                        ("kind", Json::string("assignment")),
-                                                        (
-                                                            "assignment",
-                                                            ast_assignment_json(
-                                                                assignment, locator,
-                                                            ),
-                                                        ),
-                                                    ])
-                                                }
-                                            })
-                                            .collect(),
-                                    ),
-                                ),
-                                ("location", locator.location(clause.span)),
-                            ])
-                        })
-                        .collect(),
-                ),
-            ),
-        ]),
-        Declaration::Scenario(scenario) => Json::Object(vec![
-            ("kind", Json::string("scenario")),
-            ("name", Json::string(&scenario.name.text)),
-            ("location", locator.location(scenario.span)),
-            (
-                "items",
-                Json::Array(
-                    scenario
-                        .items
-                        .iter()
-                        .map(|item| match item {
-                            ScenarioItem::Given(assignment) => Json::Object(vec![
-                                ("kind", Json::string("given")),
-                                ("assignment", ast_assignment_json(assignment, locator)),
-                                ("location", locator.location(assignment.span)),
-                            ]),
-                            ScenarioItem::Run(run) => Json::Object(vec![
-                                ("kind", Json::string("run")),
-                                ("action", Json::string(&run.action.text)),
-                                (
-                                    "arguments",
-                                    Json::Array(
-                                        run.arguments
-                                            .iter()
-                                            .map(|argument| {
-                                                Json::Object(vec![
-                                                    ("name", Json::string(&argument.text)),
-                                                    ("location", locator.location(argument.span)),
-                                                ])
-                                            })
-                                            .collect(),
-                                    ),
-                                ),
-                                ("location", locator.location(run.span)),
-                            ]),
-                            ScenarioItem::Expect(expression) => Json::Object(vec![
-                                ("kind", Json::string("expect")),
-                                ("expression", ast_expression_json(expression, locator)),
-                                ("location", locator.location(expression.span)),
-                            ]),
-                        })
-                        .collect(),
-                ),
-            ),
-        ]),
-    }
-}
-
-fn ast_assignment_json(assignment: &morva_core::Assignment, locator: &Locator<'_>) -> Json {
-    Json::Object(vec![
-        ("target", ast_path_json(&assignment.target, locator)),
-        ("operator", Json::string(assignment.operator.as_str())),
-        ("value", ast_expression_json(&assignment.value, locator)),
-        ("location", locator.location(assignment.span)),
-    ])
-}
-
-fn ast_path_json(path: &morva_core::Path, locator: &Locator<'_>) -> Json {
-    Json::Object(vec![
-        ("kind", Json::string("path")),
-        (
-            "segments",
-            Json::Array(
-                path.segments
-                    .iter()
-                    .map(|segment| {
-                        Json::Object(vec![
-                            ("name", Json::string(&segment.text)),
-                            ("location", locator.location(segment.span)),
-                        ])
-                    })
-                    .collect(),
-            ),
-        ),
-        ("location", locator.location(path.span)),
-    ])
-}
-
-fn ast_expression_json(expression: &Expr, locator: &Locator<'_>) -> Json {
-    match &expression.kind {
-        ExprKind::Integer(value) => Json::Object(vec![
-            ("kind", Json::string("integer")),
-            ("value", Json::string(&value.to_string())),
-            ("location", locator.location(expression.span)),
-        ]),
-        ExprKind::Boolean(value) => Json::Object(vec![
-            ("kind", Json::string("boolean")),
-            ("value", Json::Bool(*value)),
-            ("location", locator.location(expression.span)),
-        ]),
-        ExprKind::Path(path) => ast_path_json(path, locator),
-        ExprKind::Binary {
-            left,
-            operator,
-            right,
-        } => Json::Object(vec![
-            ("kind", Json::string("binary")),
-            ("operator", Json::string(operator.as_str())),
-            ("left", ast_expression_json(left, locator)),
-            ("right", ast_expression_json(right, locator)),
-            ("location", locator.location(expression.span)),
-        ]),
-        ExprKind::Not(operand) => Json::Object(vec![
-            ("kind", Json::string("not")),
-            ("operand", ast_expression_json(operand, locator)),
-            ("location", locator.location(expression.span)),
-        ]),
-        ExprKind::Or { left, right } => Json::Object(vec![
-            ("kind", Json::string("or")),
-            ("left", ast_expression_json(left, locator)),
-            ("right", ast_expression_json(right, locator)),
-            ("location", locator.location(expression.span)),
-        ]),
-    }
-}
-
-fn run_inspect_json(path: &str) -> ExitCode {
-    let model = match load_checked_model(path) {
-        Ok(model) => model,
-        Err(failure) => return load_failure_machine("inspect", failure),
-    };
-    // (severity, code, message, path, local span, structured kind)
-    let mut unmodeled_containers = Vec::new();
-    let mut unmodeled_behaviors = Vec::new();
-    let mut diagnostics = Vec::new();
-    match &model {
-        LoadedModel::Single { source, document } => {
-            let report = analyze(document);
-            let path = source.path.to_string_lossy();
-            for notice in &report.notices {
-                diagnostics.push(machine_diagnostic(
-                    "warning",
-                    notice.code,
-                    &notice.message,
-                    Some((&path, &source.source, notice.span)),
-                ));
-                push_unmodeled(
-                    &notice.kind,
-                    &path,
-                    &source.source,
-                    notice.span,
-                    &mut unmodeled_containers,
-                    &mut unmodeled_behaviors,
-                );
-            }
-        }
-        LoadedModel::Project { sources, project } => {
-            let report = project.analyze();
-            for notice in &report.notices {
-                let source = &sources[notice.source_id.0];
-                let path = source.path.to_string_lossy();
-                diagnostics.push(machine_diagnostic(
-                    "warning",
-                    notice.local_notice.code,
-                    &notice.local_notice.message,
-                    Some((&path, &source.source, notice.local_notice.span)),
-                ));
-                push_unmodeled(
-                    &notice.local_notice.kind,
-                    &path,
-                    &source.source,
-                    notice.local_notice.span,
-                    &mut unmodeled_containers,
-                    &mut unmodeled_behaviors,
-                );
-            }
-        }
-    }
-
-    let document = model.document();
-    let mut enumerations = Vec::new();
-    let mut entities = Vec::new();
-    let mut actions = Vec::new();
-    let mut scenarios = Vec::new();
-    collect_semantic_items(
-        &document.declarations,
-        &mut enumerations,
-        &mut entities,
-        &mut actions,
-        &mut scenarios,
-    );
-    let system = document
-        .declarations
-        .iter()
-        .find_map(|item| match item {
-            Declaration::System(system) => Some(system.name.text.as_str()),
-            _ => None,
-        })
-        .expect("checked document has one system");
-
-    let modeled = Json::Object(vec![
-        (
-            "enums",
-            Json::Array(
-                enumerations
-                    .iter()
-                    .map(|enumeration| {
-                        Json::Object(vec![
-                            ("name", Json::string(&enumeration.name.text)),
-                            ("member_count", Json::UInt(enumeration.members.len() as u64)),
-                        ])
-                    })
-                    .collect(),
-            ),
-        ),
-        (
-            "entities",
-            Json::Array(
-                entities
-                    .iter()
-                    .map(|entity| {
-                        Json::Object(vec![
-                            ("name", Json::string(&entity.name.text)),
-                            ("field_count", Json::UInt(entity.fields.len() as u64)),
-                            (
-                                "invariant_count",
-                                Json::UInt(entity.invariants.len() as u64),
-                            ),
-                        ])
-                    })
-                    .collect(),
-            ),
-        ),
-        (
-            "actions",
-            Json::Array(
-                actions
-                    .iter()
-                    .map(|action| {
-                        let counts = |kind| {
-                            action
-                                .clauses
-                                .iter()
-                                .filter(|clause| clause.kind == kind)
-                                .map(|clause| clause.expressions.len())
-                                .sum::<usize>() as u64
-                        };
-                        Json::Object(vec![
-                            ("name", Json::string(&action.name.text)),
-                            (
-                                "parameter_count",
-                                Json::UInt(action.parameters.len() as u64),
-                            ),
-                            (
-                                "requires",
-                                Json::UInt(counts(morva_core::ClauseKind::Requires)),
-                            ),
-                            (
-                                "effects",
-                                Json::UInt(counts(morva_core::ClauseKind::Effects)),
-                            ),
-                            (
-                                "ensures",
-                                Json::UInt(counts(morva_core::ClauseKind::Ensures)),
-                            ),
-                            (
-                                "invariants",
-                                Json::UInt(counts(morva_core::ClauseKind::Invariant)),
-                            ),
-                            (
-                                "soft_behavior_count",
-                                Json::UInt(action.soft_behaviors.len() as u64),
-                            ),
-                        ])
-                    })
-                    .collect(),
-            ),
-        ),
-        (
-            "scenarios",
-            Json::Array(
-                scenarios
-                    .iter()
-                    .map(|scenario| {
-                        let givens = scenario
-                            .items
-                            .iter()
-                            .filter(|item| matches!(item, ScenarioItem::Given(_)))
-                            .count() as u64;
-                        let expects = scenario
-                            .items
-                            .iter()
-                            .filter(|item| matches!(item, ScenarioItem::Expect(_)))
-                            .count() as u64;
-                        Json::Object(vec![
-                            ("name", Json::string(&scenario.name.text)),
-                            ("given_count", Json::UInt(givens)),
-                            ("run_count", Json::UInt(1)),
-                            ("expect_count", Json::UInt(expects)),
-                        ])
-                    })
-                    .collect(),
-            ),
-        ),
-    ]);
-    let container_count = unmodeled_containers.len() as u64;
-    let behavior_count = unmodeled_behaviors.len() as u64;
-    let summary = Json::Object(vec![
-        ("system", Json::string(system)),
-        ("modeled", modeled),
-        (
-            "unmodeled",
-            Json::Object(vec![
-                ("item_count", Json::UInt(container_count + behavior_count)),
-                ("compatibility_container_count", Json::UInt(container_count)),
-                (
-                    "compatibility_containers",
-                    Json::Array(unmodeled_containers),
-                ),
-                ("action_soft_behavior_count", Json::UInt(behavior_count)),
-                ("action_soft_behaviors", Json::Array(unmodeled_behaviors)),
-            ]),
-        ),
-    ]);
-    emit_machine(&machine_envelope(
-        "inspect",
-        true,
-        vec![
-            ("diagnostics", Json::Array(diagnostics)),
-            ("summary", summary),
-        ],
-    ));
-    ExitCode::SUCCESS
-}
-
-fn push_unmodeled(
-    kind: &NoticeKind,
-    path: &str,
-    source: &str,
-    span: Span,
-    containers: &mut Vec<Json>,
-    behaviors: &mut Vec<Json>,
-) {
-    let (line, column, _) = location(source, span.start);
-    let entry_location = location_json(path, line, column, span);
-    match kind {
-        NoticeKind::CompatibilityContainer { kind, name } => containers.push(Json::Object(vec![
-            ("container_kind", Json::string(kind)),
-            ("name", Json::string(name)),
-            ("location", entry_location),
-        ])),
-        NoticeKind::ActionSoftBehavior { action, behavior } => behaviors.push(Json::Object(vec![
-            ("action", Json::string(action)),
-            ("behavior", Json::string(behavior.as_str())),
-            ("location", entry_location),
-        ])),
-    }
-}
-
-fn run_capabilities_json() -> ExitCode {
-    let inventory = morva_core::capabilities();
-    let strings =
-        |items: &[&'static str]| Json::Array(items.iter().map(|item| Json::string(item)).collect());
-    let capabilities = Json::Object(vec![
-        ("version", Json::UInt(u64::from(inventory.version))),
-        ("declarations", strings(&inventory.declarations)),
-        ("clause_kinds", strings(&inventory.clause_kinds)),
-        ("expression_forms", strings(&inventory.expression_forms)),
-        (
-            "comparison_operators",
-            strings(&inventory.comparison_operators),
-        ),
-        (
-            "assignment_operators",
-            strings(&inventory.assignment_operators),
-        ),
-        ("literals", strings(&inventory.literals)),
-        ("builtin_types", strings(&inventory.builtin_types)),
-        (
-            "builtin_type_aliases",
-            Json::Array(
-                inventory
-                    .builtin_type_aliases
-                    .iter()
-                    .map(|(alias, canonical)| {
-                        Json::Object(vec![
-                            ("alias", Json::string(alias)),
-                            ("canonical", Json::string(canonical)),
-                        ])
-                    })
-                    .collect(),
-            ),
-        ),
-        (
-            "simulation_value_types",
-            strings(&inventory.simulation_value_types),
-        ),
-        ("simulation_phases", strings(&inventory.simulation_phases)),
-        (
-            "compatibility_containers",
-            strings(&inventory.compatibility_containers),
-        ),
-        ("soft_behaviors", strings(&inventory.soft_behaviors)),
-        ("unsupported", strings(&inventory.unsupported)),
-    ]);
-    emit_machine(&machine_envelope(
-        "capabilities",
-        true,
-        vec![("capabilities", capabilities)],
-    ));
-    ExitCode::SUCCESS
-}
-
-fn run_simulation_json(path: &str, scenario: &str) -> ExitCode {
-    let model = match load_checked_model(path) {
-        Ok(model) => model,
-        Err(failure) => return load_failure_machine("simulate", failure),
-    };
-    let locator = match &model {
-        LoadedModel::Single { source, .. } => Locator::Single {
-            path: source.path.to_string_lossy().into_owned(),
-            source: &source.source,
-        },
-        LoadedModel::Project { sources, project } => Locator::Project { sources, project },
-    };
-    let report = match simulate(model.document(), scenario) {
-        Ok(report) => report,
-        Err(diagnostic) => {
-            let item = machine_diagnostic_at(
-                "error",
-                diagnostic.code,
-                &diagnostic.message,
-                locator.try_location(diagnostic.span),
-            );
-            return machine_diagnostics_exit("simulate", false, vec![item]);
-        }
-    };
-    let system = model
-        .document()
-        .declarations
-        .iter()
-        .find_map(|item| match item {
-            Declaration::System(system) => Some(system.name.text.clone()),
-            _ => None,
-        })
-        .expect("checked document has one system");
-    let phases = Json::Array(
-        morva_core::SimulationPhase::ALL
-            .iter()
-            .map(|phase| {
-                let status = report
-                    .phases
-                    .iter()
-                    .find(|result| result.phase == *phase)
-                    .map_or(
-                        "not_run",
-                        |result| {
-                            if result.passed { "passed" } else { "failed" }
-                        },
-                    );
-                Json::Object(vec![
-                    ("phase", Json::string(phase.as_str())),
-                    ("status", Json::string(status)),
-                ])
-            })
-            .collect(),
-    );
-    let changes = Json::Array(
-        report
-            .changes
-            .iter()
-            .map(|change| {
-                Json::Object(vec![
-                    ("path", Json::string(&change.path)),
-                    (
-                        "before",
-                        change
-                            .before
-                            .as_ref()
-                            .map_or(Json::Null, simulation_value_json),
-                    ),
-                    ("after", simulation_value_json(&change.after)),
-                ])
-            })
-            .collect(),
-    );
-    let state = Json::Array(
-        report
-            .state
-            .iter()
-            .map(|(path, value)| {
-                Json::Object(vec![
-                    ("path", Json::string(path)),
-                    ("value", simulation_value_json(value)),
-                ])
-            })
-            .collect(),
-    );
-    let failure = match &report.failure {
-        None => Json::Null,
-        Some(failure) => Json::Object(vec![
-            ("phase", Json::string(failure.phase.as_str())),
-            ("message", Json::string(&failure.message)),
-            (
-                "location",
-                locator.try_location(failure.span).unwrap_or(Json::Null),
-            ),
-        ]),
-    };
-    let success = report.succeeded();
-    let payload = Json::Object(vec![
-        ("system", Json::string(&system)),
-        ("scenario", Json::string(&report.scenario)),
-        ("action", Json::string(&report.action)),
-        ("phases", phases),
-        ("changes", changes),
-        ("state", state),
-        ("failure", failure),
-    ]);
-    emit_machine(&machine_envelope(
-        "simulate",
-        success,
-        vec![
-            ("diagnostics", Json::Array(Vec::new())),
-            ("report", payload),
-        ],
-    ));
-    if success {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::FAILURE
-    }
-}
-
-fn simulation_value_json(value: &morva_core::Value) -> Json {
-    match value {
-        morva_core::Value::Boolean(inner) => Json::Object(vec![
-            ("type", Json::string("boolean")),
-            ("value", Json::Bool(*inner)),
-        ]),
-        morva_core::Value::Integer(inner) => Json::Object(vec![
-            ("type", Json::string("integer")),
-            ("value", Json::string(&inner.to_string())),
-        ]),
-        morva_core::Value::Enum { type_name, member } => Json::Object(vec![
-            ("type", Json::string("enum")),
-            ("enum", Json::string(type_name)),
-            ("member", Json::string(member)),
-        ]),
-    }
-}
-
-fn machine_diagnostic_at(
-    severity: &str,
-    code: &str,
-    message: &str,
-    location: Option<Json>,
-) -> Json {
-    Json::Object(vec![
-        ("severity", Json::string(severity)),
-        ("code", Json::string(code)),
-        ("message", Json::string(message)),
-        ("location", location.unwrap_or(Json::Null)),
-    ])
 }
