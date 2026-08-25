@@ -2064,3 +2064,157 @@ fn comment_cannot_split_the_disjunction_operator() {
     assert_eq!(split[0].code, "MORVA1025");
     assert_eq!(split[0].message, "comment cannot split a token");
 }
+
+#[test]
+fn nested_boolean_contradictions_use_conservative_three_valued_evaluation() {
+    // Constant-false nested forms report the existing obvious contradiction.
+    for predicate in [
+        "false || false",
+        "!(true)",
+        "!(true || false)",
+        "false || !(true)",
+    ] {
+        let source =
+            format!("system Shop {{\n  action Save {{\n    requires {predicate}\n  }}\n}}\n");
+        let document = parse(&source).expect("parses");
+        let diagnostics = check(&document);
+        assert_eq!(diagnostics.len(), 1, "{predicate}");
+        assert_eq!(diagnostics[0].code, "MORVA2018", "{predicate}");
+        assert_eq!(
+            diagnostics[0].message, "predicate is always false",
+            "{predicate}"
+        );
+        assert_eq!(
+            diagnostics[0].span.start,
+            source.find(predicate).unwrap(),
+            "{predicate}: span covers the responsible formula"
+        );
+        assert_eq!(
+            diagnostics[0].span.end - diagnostics[0].span.start,
+            predicate.len(),
+            "{predicate}"
+        );
+    }
+
+    // A nested formula falsified by an earlier exact fact reports the
+    // existing constraint-conflict diagnostic on the whole formula.
+    let source = "system Shop {\n  entity Order { value: Integer }\n  action Save(order: Order) {\n    requires order.value == 1\n    requires !(order.value == 1) || false\n  }\n}\n";
+    let document = parse(source).expect("parses");
+    let diagnostics = check(&document);
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code, "MORVA2018");
+    assert_eq!(
+        diagnostics[0].message,
+        "predicate conflicts with an earlier literal constraint on 'order.value'"
+    );
+    assert_eq!(
+        diagnostics[0].span.start,
+        source.find("!(order.value == 1) || false").unwrap()
+    );
+
+    // A disjunction with a provably true branch never reports, whatever the
+    // other branch is.
+    for predicate in [
+        "order.value == 2 || true",
+        "true || order.value == 2",
+        "true || false",
+    ] {
+        let source = format!(
+            "system Shop {{\n  entity Order {{ value: Integer }}\n  action Save(order: Order) {{\n    requires order.value == 1\n    requires {predicate}\n  }}\n}}\n"
+        );
+        let document = parse(&source).expect("parses");
+        assert!(check(&document).is_empty(), "{predicate}");
+    }
+
+    // Unknown branches keep the whole formula unknown: no false positives.
+    let unknown = parse(
+        "system Shop {\n  entity Order { value: Integer\n    vip: Boolean }\n  action Save(order: Order) {\n    requires order.value == 1 || order.vip\n  }\n}\n",
+    )
+    .expect("parses");
+    assert!(check(&unknown).is_empty());
+}
+
+#[test]
+fn disjunction_branch_facts_do_not_leak_into_the_group_fact_set() {
+    // 'value == 1 || value == 2' proves neither branch, so a later exact
+    // fact must not conflict with either branch value.
+    let source = "system Shop {\n  entity Order { value: Integer }\n  action Save(order: Order) {\n    requires order.value == 1 || order.value == 2\n    requires order.value == 3\n  }\n}\n";
+    let document = parse(source).expect("parses");
+    assert!(check(&document).is_empty());
+
+    // But the disjunction itself is still evaluated against earlier facts:
+    // with value == 3 known first, both branches are provably false.
+    let flipped = "system Shop {\n  entity Order { value: Integer }\n  action Save(order: Order) {\n    requires order.value == 3\n    requires order.value == 1 || order.value == 2\n  }\n}\n";
+    let document = parse(flipped).expect("parses");
+    let diagnostics = check(&document);
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code, "MORVA2018");
+    assert!(diagnostics[0].message.contains("order.value"));
+}
+
+#[test]
+fn nested_postconditions_check_against_final_literal_effects() {
+    // Pre-state and post-state fact groups stay separate: a legal transition
+    // with a negated postcondition is clean.
+    let clean = r#"system Shop {
+  enum Status {
+    Pending
+    Shipped
+  }
+  entity Order { status: Status }
+  action Ship(order: Order) {
+    requires order.status == Pending
+    effects order.status = Shipped
+    ensures !(order.status == Pending)
+  }
+}
+"#;
+    let document = parse(clean).expect("parses");
+    assert!(check(&document).is_empty());
+
+    // A nested postcondition falsified by the final literal effect reports
+    // the existing MORVA2019 diagnostic.
+    for (ensures, expected_path) in [
+        ("!(order.status == Shipped)", "order.status"),
+        ("order.status == Pending || false", "order.status"),
+    ] {
+        let source = format!(
+            "system Shop {{\n  enum Status {{\n    Pending\n    Shipped\n  }}\n  entity Order {{ status: Status }}\n  action Ship(order: Order) {{\n    effects order.status = Shipped\n    ensures {ensures}\n  }}\n}}\n"
+        );
+        let document = parse(&source).expect("parses");
+        let diagnostics = check(&document);
+        assert_eq!(diagnostics.len(), 1, "{ensures}");
+        assert_eq!(diagnostics[0].code, "MORVA2019", "{ensures}");
+        assert_eq!(
+            diagnostics[0].message,
+            format!("postcondition conflicts with final literal effect for '{expected_path}'"),
+            "{ensures}"
+        );
+        assert_eq!(
+            diagnostics[0].span.start,
+            source.find(ensures).unwrap(),
+            "{ensures}"
+        );
+    }
+
+    // Compound or non-literal writes demote the path to unknown: no report.
+    let unknown = r#"system Shop {
+  entity Order { value: Integer }
+  action Bump(order: Order) {
+    effects order.value += 1
+    ensures !(order.value == 0)
+  }
+}
+"#;
+    let document = parse(unknown).expect("parses");
+    assert!(check(&document).is_empty());
+}
+
+#[test]
+fn invalid_nested_formulas_keep_primary_diagnostics_without_contradiction_noise() {
+    let source = "system Shop {\n  action Save {\n    requires missing.path == 1 || false\n    requires false\n  }\n}\n";
+    let document = parse(source).expect("parses");
+    let diagnostics = check(&document);
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code, "MORVA2009");
+}

@@ -615,7 +615,7 @@ fn check_final_effect_contradictions(
     index: &TypeIndex<'_>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    let mut final_values: HashMap<String, Option<LiteralFactValue>> = HashMap::new();
+    let mut final_facts: HashMap<String, PathConstraints> = HashMap::new();
     for clause in &action.clauses {
         if clause.kind != ClauseKind::Effects {
             continue;
@@ -632,7 +632,20 @@ fn check_final_effect_contradictions(
             } else {
                 None
             };
-            final_values.insert(path, value);
+            match value {
+                Some(value) => {
+                    final_facts.insert(
+                        path,
+                        PathConstraints {
+                            equal: Some(value),
+                            not_equal: Vec::new(),
+                        },
+                    );
+                }
+                None => {
+                    final_facts.remove(&path);
+                }
+            }
         }
     }
 
@@ -644,28 +657,16 @@ fn check_final_effect_contradictions(
             let ClauseExpression::Predicate(expression) = expression else {
                 continue;
             };
-            let Some(fact) = literal_fact(expression, parameters, index) else {
+            let mut used_paths = Vec::new();
+            let value =
+                evaluate_formula(expression, &final_facts, parameters, index, &mut used_paths);
+            let Some(path) = used_paths.first() else {
                 continue;
-            };
-            let (path, conflicts) = match fact {
-                LiteralFact::Equal(path, expected) => {
-                    let conflicts = final_values
-                        .get(&path)
-                        .and_then(Option::as_ref)
-                        .is_some_and(|actual| actual != &expected);
-                    (path, conflicts)
-                }
-                LiteralFact::NotEqual(path, rejected) => {
-                    let conflicts =
-                        final_values.get(&path).and_then(Option::as_ref) == Some(&rejected);
-                    (path, conflicts)
-                }
-                LiteralFact::Always(_) => continue,
             };
             let already_reported = diagnostics.iter().any(|diagnostic| {
                 diagnostic.code == "MORVA2018" && diagnostic.span == expression.span
             });
-            if conflicts && !already_reported {
+            if value == Tri::False && !already_reported {
                 diagnostics.push(Diagnostic::new(
                     "MORVA2019",
                     format!("postcondition conflicts with final literal effect for '{path}'"),
@@ -693,57 +694,118 @@ fn check_predicate_group(
             let ClauseExpression::Predicate(expression) = expression else {
                 continue;
             };
-            let Some(fact) = literal_fact(expression, parameters, index) else {
-                continue;
-            };
-            let conflict = match fact {
-                LiteralFact::Always(value) => !value,
-                LiteralFact::Equal(path, value) => {
-                    let entry = constraints.entry(path.clone()).or_default();
-                    let conflict = entry
-                        .equal
-                        .as_ref()
-                        .is_some_and(|earlier| earlier != &value)
-                        || entry.not_equal.contains(&value);
+            let mut used_paths = Vec::new();
+            let value =
+                evaluate_formula(expression, &constraints, parameters, index, &mut used_paths);
+            if value == Tri::False && emitted.insert((expression.span.start, expression.span.end)) {
+                let message = match used_paths.first() {
+                    Some(path) => {
+                        format!(
+                            "predicate conflicts with an earlier literal constraint on '{path}'"
+                        )
+                    }
+                    None => "predicate is always false".to_owned(),
+                };
+                diagnostics.push(Diagnostic::new("MORVA2018", message, expression.span));
+            }
+            // Only unconditional top-level exact facts join the group's fact
+            // set; facts inside '!' or a '||' branch never leak out.
+            match literal_fact(expression, parameters, index) {
+                Some(LiteralFact::Equal(path, value)) => {
+                    let entry = constraints.entry(path).or_default();
                     if entry.equal.is_none() {
                         entry.equal = Some(value);
                     }
-                    if conflict && emitted.insert((expression.span.start, expression.span.end)) {
-                        diagnostics.push(Diagnostic::new(
-                            "MORVA2018",
-                            format!(
-                                "predicate conflicts with an earlier literal constraint on '{path}'"
-                            ),
-                            expression.span,
-                        ));
-                    }
-                    continue;
                 }
-                LiteralFact::NotEqual(path, value) => {
-                    let entry = constraints.entry(path.clone()).or_default();
-                    let conflict = entry.equal.as_ref() == Some(&value);
+                Some(LiteralFact::NotEqual(path, value)) => {
+                    let entry = constraints.entry(path).or_default();
                     if !entry.not_equal.contains(&value) {
                         entry.not_equal.push(value);
                     }
-                    if conflict && emitted.insert((expression.span.start, expression.span.end)) {
-                        diagnostics.push(Diagnostic::new(
-                            "MORVA2018",
-                            format!(
-                                "predicate conflicts with an earlier literal constraint on '{path}'"
-                            ),
-                            expression.span,
-                        ));
-                    }
-                    continue;
                 }
-            };
-            if conflict && emitted.insert((expression.span.start, expression.span.end)) {
-                diagnostics.push(Diagnostic::new(
-                    "MORVA2018",
-                    "predicate is always false",
-                    expression.span,
-                ));
+                Some(LiteralFact::Always(_)) | None => {}
             }
+        }
+    }
+}
+
+/// Conservative three-valued evaluation of a predicate formula against known
+/// exact per-path facts. `used_paths` records, in evaluation order, every path
+/// whose fact determined a sub-result; an empty list on a False result means
+/// the formula is constant-false on its own.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tri {
+    True,
+    False,
+    Unknown,
+}
+
+fn evaluate_formula(
+    expression: &Expr,
+    facts: &HashMap<String, PathConstraints>,
+    parameters: &HashMap<&str, &Parameter>,
+    index: &TypeIndex<'_>,
+    used_paths: &mut Vec<String>,
+) -> Tri {
+    match &expression.kind {
+        ExprKind::Boolean(true) => Tri::True,
+        ExprKind::Boolean(false) => Tri::False,
+        ExprKind::Integer(_) | ExprKind::Path(_) => Tri::Unknown,
+        ExprKind::Not(operand) => {
+            match evaluate_formula(operand, facts, parameters, index, used_paths) {
+                Tri::True => Tri::False,
+                Tri::False => Tri::True,
+                Tri::Unknown => Tri::Unknown,
+            }
+        }
+        ExprKind::Or { left, right } => {
+            let left = evaluate_formula(left, facts, parameters, index, used_paths);
+            if left == Tri::True {
+                return Tri::True;
+            }
+            let right = evaluate_formula(right, facts, parameters, index, used_paths);
+            match (left, right) {
+                (_, Tri::True) => Tri::True,
+                (Tri::False, Tri::False) => Tri::False,
+                _ => Tri::Unknown,
+            }
+        }
+        ExprKind::Binary {
+            left,
+            operator,
+            right,
+        } => {
+            if let (Some(left), Some(right)) = (plain_literal(left), plain_literal(right)) {
+                return match evaluate_literal_comparison(left, *operator, right) {
+                    Some(true) => Tri::True,
+                    Some(false) => Tri::False,
+                    None => Tri::Unknown,
+                };
+            }
+            let fact = path_literal_fact(left, *operator, right, parameters, index)
+                .or_else(|| path_literal_fact(right, *operator, left, parameters, index));
+            let (path, value, expects_equal) = match fact {
+                Some(LiteralFact::Equal(path, value)) => (path, value, true),
+                Some(LiteralFact::NotEqual(path, value)) => (path, value, false),
+                Some(LiteralFact::Always(_)) | None => return Tri::Unknown,
+            };
+            let Some(entry) = facts.get(&path) else {
+                return Tri::Unknown;
+            };
+            if let Some(known) = &entry.equal {
+                used_paths.push(path.clone());
+                let equal = known == &value;
+                return if equal == expects_equal {
+                    Tri::True
+                } else {
+                    Tri::False
+                };
+            }
+            if entry.not_equal.contains(&value) {
+                used_paths.push(path.clone());
+                return if expects_equal { Tri::False } else { Tri::True };
+            }
+            Tri::Unknown
         }
     }
 }

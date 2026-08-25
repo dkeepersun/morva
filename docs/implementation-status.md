@@ -11,7 +11,7 @@
 - 谓词级 Boolean 取反 `!`、分组括号与析取 `||`：优先级为比较 > `!` > `||`，`||` 左结合、模拟中从左到右短路求值；`!` 操作数与 `||` 两侧必须为 Boolean（`MORVA2013`）且右侧始终被静态检查；空括号/未闭合括号有稳定语法诊断（`MORVA1013`/`MORVA1026`），注释不能拆分 `||`（`MORVA1025`）；未初始化读取契约与责任 span 保持不变。
 - 单一顶层 system、重复名称、未知/歧义类型、路径、enum member、effect target 检查。
 - Canonical builtin、Boolean 谓词、比较操作数及 effect 值类型检查；解析失败后抑制派生类型诊断。
-- Action 前/后态的有限精确字面量事实一致性检查，以及顺序 effects 最终已知直接赋值与后置约束检查（`MORVA2018/2019`）。
+- Action 前/后态的保守三态公式矛盾检查（含 `!`/`||`/括号嵌套），以及顺序 effects 最终已知直接赋值与后置公式检查（`MORVA2018/2019`）；无误报原则保持，未报告不代表已证明可满足。
 - Scenario 结构、action 选择、arity、entity 参数绑定和 given 值检查。
 - `check`、`parse`、`inspect`、`simulate` CLI 与稳定退出码。
 - 四个命令接受单文件或平铺项目目录；core 以同名 system 装配跨文件声明，用 source map 将语法、语义和模拟失败定位回原文件本地 span。
@@ -38,7 +38,7 @@
 
 当前 checker 已区分 canonical builtin family，并检查现有谓词、比较和 effect 类型。它仍不是完整类型系统：没有通用推断或转换、`&&` 操作符、算术表达式、Entity 整体值、数据流分析或形式化证明。Decimal 上下文只接受非负 Integer 字面量作为精确常量；受限 simulator 仍只执行 enum、Boolean 和 Integer 值，并保留运行时守卫。
 
-明显矛盾检查只处理已解析的 Boolean、Integer、enum 与 Decimal-context Integer 精确字面量事实；含 `!` 或 `||` 的谓词当前不参与事实推导。它不做有序区间求解、entity invariant 参数实例化、scenario/action 内联、未写路径跨阶段推理或 compound effect 折叠；非字面量写入和 compound effect 会把相应最终值降为 Unknown。
+明显矛盾检查以 True/False/Unknown 三态保守求值谓词公式（literal、精确比较、`!`、`||`、括号），事实仍限于 Boolean、Integer、enum 与 Decimal-context Integer 精确字面量；只有顶层平凡精确比较贡献事实，`!`/`||` 分支内事实不外泄。它不做公式分配、完整 SAT、有序区间求解、entity invariant 参数实例化、scenario/action 内联、未写路径跨阶段推理或 compound effect 折叠；非字面量写入和 compound effect 会把相应最终值降为 Unknown。
 
 ### 词法与诊断边界
 

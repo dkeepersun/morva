@@ -140,7 +140,7 @@ left || right
 
 ### 明显矛盾检查
 
-引用和类型检查成功后，checker 会保守识别 action 中无需符号执行即可确定的字面量矛盾：恒假的 Boolean/Integer 常量比较、同一状态阶段中同一路径的互斥 `==`/`!=` 精确值事实，以及最终已知直接字面量 `=` effect 与后置事实的冲突。`requires + action invariant` 形成前态事实组，`action invariant + ensures` 形成独立的后态事实组；合法的前后状态变化不会被合并。
+引用和类型检查成功后，checker 会保守识别 action 中无需符号执行即可确定的矛盾。谓词公式（literal、精确比较、`!`、`||`、括号的任意嵌套）按 True/False/Unknown 三态求值：整个公式可证明为 False 时才报告——常量恒假形式（如 `false || false`、`!(true)`）报 "predicate is always false"，由本组更早的精确事实证伪的公式报既有 constraint-conflict 消息，span 覆盖责任公式。析取任一分支可证明为 True 则整体不报告；任何分支为 Unknown 且无分支使公式确定为 False 时保持 Unknown。只有顶层平凡 `==`/`!=` 精确比较把事实加入本组事实集；`!` 或 `||` 分支内部的事实不外泄。`requires + action invariant` 形成前态事实组，`action invariant + ensures` 形成独立的后态事实组；合法的前后状态变化不会被合并。后置公式还会针对最终已知直接字面量 `=` effect 求值，可证明为 False 时报 `MORVA2019`。
 
 Effects 仍按源码顺序解释。每个路径最后一次直接字面量 `=` 可形成已知最终值；非字面量 `=` 或 `+=/-=` 会把该路径降为未知，后续直接字面量 `=` 可以恢复已知。含 `!` 的谓词当前不参与矛盾事实推导。当前不做有序区间求解、entity invariant 参数实例化、scenario/action 内联、未写路径跨阶段推理或 compound effect 折叠，因此未报告不代表已证明可满足。
 
