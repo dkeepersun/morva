@@ -907,6 +907,11 @@ fn resolve_type<'a>(name: &Name, index: &'a TypeIndex<'a>) -> Option<ResolvedTyp
     })
 }
 
+pub(crate) const BUILTIN_TYPE_NAMES: &[&str] = &["Boolean", "Decimal", "ID", "Integer", "String"];
+
+pub(crate) const BUILTIN_TYPE_ALIASES: &[(&str, &str)] =
+    &[("Bool", "Boolean"), ("Id", "ID"), ("Int", "Integer")];
+
 fn resolve_builtin(name: &str) -> Option<BuiltinType> {
     match name {
         "Bool" | "Boolean" => Some(BuiltinType::Boolean),

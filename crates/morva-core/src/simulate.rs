@@ -33,6 +33,16 @@ pub enum SimulationPhase {
 }
 
 impl SimulationPhase {
+    pub const ALL: [Self; 7] = [
+        Self::Givens,
+        Self::InitialInvariants,
+        Self::Requires,
+        Self::Effects,
+        Self::FinalInvariants,
+        Self::Ensures,
+        Self::Expects,
+    ];
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Givens => "givens",

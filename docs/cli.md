@@ -9,8 +9,18 @@ morva check <file-or-directory>  Parse and run current semantic checks
 morva parse <file-or-directory>  Print declarations, enum members, fields, parameters, and clauses
 morva inspect <file-or-directory>  Print a stable text summary of the semantic model
 morva simulate <file-or-directory> <scenario>  Run one checked scenario in memory
+morva capabilities  Print the authoritative capability inventory
 morva help          Show concise usage
 ```
+
+`capabilities` takes no model input, reads no files, and prints the core
+`capabilities()` inventory as stable, deterministic text: version, semantic
+declarations, clauses, expression forms, operators, literals, builtin types and
+aliases, simulation value types and phases, compatibility containers, soft
+behaviors, and explicitly unsupported categories. Repeat runs are
+byte-identical and exit `0`. The listed container and soft behavior categories
+are the same constants the parser and `check`/`inspect` warnings use, so the
+inventory cannot drift from executable behavior without failing tests.
 
 `check`, `parse`, and `inspect` all parse and run the current semantic checker before
 producing success output. `parse` prints the typed AST surface that Morva currently

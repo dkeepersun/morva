@@ -1668,3 +1668,98 @@ fn soft_container_and_semantic_findings_share_source_order_and_legacy_check_pari
         ["MORVA5001", "MORVA5002", "MORVA5002"]
     );
 }
+
+#[test]
+fn capability_inventory_matches_public_language_behavior() {
+    let inventory = morva_core::capabilities();
+    assert_eq!(inventory.version, morva_core::CAPABILITY_INVENTORY_VERSION);
+    assert_eq!(inventory, morva_core::capabilities());
+
+    assert_eq!(
+        inventory.declarations,
+        ["system", "entity", "enum", "action", "scenario"]
+    );
+
+    for kind in &inventory.compatibility_containers {
+        let source = format!("system Shop {{\n  {kind} Compat {{}}\n}}\n");
+        let document = parse(&source).expect("listed container kind parses");
+        let report = analyze(&document);
+        assert!(report.errors.is_empty(), "{kind}: {:?}", report.errors);
+        assert_eq!(report.notices.len(), 1, "{kind}");
+        assert_eq!(report.notices[0].code, "MORVA5001", "{kind}");
+        match &report.notices[0].kind {
+            NoticeKind::CompatibilityContainer {
+                kind: notice_kind,
+                name,
+            } => {
+                assert_eq!(notice_kind, kind);
+                assert_eq!(name, "Compat");
+            }
+            other => panic!("unexpected notice kind for {kind}: {other:?}"),
+        }
+    }
+
+    for behavior in &inventory.soft_behaviors {
+        let item = if *behavior == "implementation_hint" {
+            "implementation_hint { note }".to_owned()
+        } else {
+            format!("{behavior} 1")
+        };
+        let source = format!("system Shop {{\n  action Save {{\n    {item}\n  }}\n}}\n");
+        let document = parse(&source).expect("listed soft behavior parses");
+        let report = analyze(&document);
+        assert!(report.errors.is_empty(), "{behavior}: {:?}", report.errors);
+        assert_eq!(report.notices.len(), 1, "{behavior}");
+        assert_eq!(report.notices[0].code, "MORVA5002", "{behavior}");
+        match &report.notices[0].kind {
+            NoticeKind::ActionSoftBehavior {
+                action,
+                behavior: notice_behavior,
+            } => {
+                assert_eq!(action, "Save");
+                assert_eq!(notice_behavior.as_str(), *behavior);
+            }
+            other => panic!("unexpected notice kind for {behavior}: {other:?}"),
+        }
+    }
+
+    for operator in &inventory.comparison_operators {
+        let source = format!(
+            "system Shop {{\n  entity Item {{ value: Integer }}\n  action Save(item: Item) {{\n    requires item.value {operator} 1\n  }}\n}}\n"
+        );
+        let document = parse(&source).expect("listed comparison operator parses");
+        assert!(check(&document).is_empty(), "{operator}");
+    }
+
+    for operator in &inventory.assignment_operators {
+        let source = format!(
+            "system Shop {{\n  entity Item {{ value: Integer }}\n  action Save(item: Item) {{\n    effects item.value {operator} 1\n  }}\n}}\n"
+        );
+        let document = parse(&source).expect("listed assignment operator parses");
+        assert!(check(&document).is_empty(), "{operator}");
+    }
+
+    for kind in &inventory.clause_kinds {
+        let body = if *kind == "effects" {
+            "effects item.value = 1".to_owned()
+        } else {
+            format!("{kind} item.value == 1")
+        };
+        let source = format!(
+            "system Shop {{\n  entity Item {{ value: Integer }}\n  action Save(item: Item) {{\n    {body}\n  }}\n}}\n"
+        );
+        let document = parse(&source).expect("listed clause kind parses");
+        assert!(check(&document).is_empty(), "{kind}");
+    }
+
+    for name in inventory.builtin_types.iter().chain(
+        inventory
+            .builtin_type_aliases
+            .iter()
+            .map(|(alias, _)| alias),
+    ) {
+        let source = format!("system Shop {{\n  entity Item {{ value: {name} }}\n}}\n");
+        let document = parse(&source).expect("listed builtin type parses");
+        assert!(check(&document).is_empty(), "{name}");
+    }
+}

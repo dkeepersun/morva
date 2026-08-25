@@ -250,6 +250,14 @@ pub enum SoftBehaviorKind {
 }
 
 impl SoftBehaviorKind {
+    pub const ALL: [Self; 5] = [
+        Self::Atomic,
+        Self::Idempotent,
+        Self::Timeout,
+        Self::Retry,
+        Self::ImplementationHint,
+    ];
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Atomic => "atomic",
@@ -377,6 +385,13 @@ pub enum ClauseKind {
 }
 
 impl ClauseKind {
+    pub const ALL: [Self; 4] = [
+        Self::Requires,
+        Self::Effects,
+        Self::Ensures,
+        Self::Invariant,
+    ];
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Requires => "requires",
@@ -434,6 +449,18 @@ pub enum AssignmentOperator {
     Subtract,
 }
 
+impl AssignmentOperator {
+    pub const ALL: [Self; 3] = [Self::Set, Self::Add, Self::Subtract];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Set => "=",
+            Self::Add => "+=",
+            Self::Subtract => "-=",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Expr {
     pub kind: ExprKind,
@@ -474,6 +501,28 @@ pub enum BinaryOperator {
     GreaterEqual,
     Less,
     LessEqual,
+}
+
+impl BinaryOperator {
+    pub const ALL: [Self; 6] = [
+        Self::Equal,
+        Self::NotEqual,
+        Self::Greater,
+        Self::GreaterEqual,
+        Self::Less,
+        Self::LessEqual,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Equal => "==",
+            Self::NotEqual => "!=",
+            Self::Greater => ">",
+            Self::GreaterEqual => ">=",
+            Self::Less => "<",
+            Self::LessEqual => "<=",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

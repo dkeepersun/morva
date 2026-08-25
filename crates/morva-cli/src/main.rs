@@ -5,10 +5,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use morva_core::{
-    Action, AnalysisFinding, AssignmentOperator, BinaryOperator, ClauseExpression, Declaration,
-    Diagnostic, Document, Entity, Enum, Expr, ExprKind, Notice, NoticeKind, Project,
-    ProjectDiagnostic, ProjectFinding, Scenario, ScenarioItem, SimulationReport, Span, analyze,
-    check, parse, simulate,
+    Action, AnalysisFinding, ClauseExpression, Declaration, Diagnostic, Document, Entity, Enum,
+    Expr, ExprKind, Notice, NoticeKind, Project, ProjectDiagnostic, ProjectFinding, Scenario,
+    ScenarioItem, SimulationReport, Span, analyze, check, parse, simulate,
 };
 
 const MAX_DIAGNOSTIC_WIDTH: usize = 160;
@@ -20,6 +19,10 @@ fn main() -> ExitCode {
     match args.as_slice() {
         [command] if command == "help" || command == "--help" || command == "-h" => {
             help();
+            ExitCode::SUCCESS
+        }
+        [command] if command == "capabilities" => {
+            print_capabilities();
             ExitCode::SUCCESS
         }
         [command, path] if command == "check" || command == "parse" || command == "inspect" => {
@@ -793,14 +796,10 @@ fn format_clause_expression(expression: &ClauseExpression) -> String {
     match expression {
         ClauseExpression::Predicate(expression) => format_expr(expression),
         ClauseExpression::Assignment(assignment) => {
-            let operator = match assignment.operator {
-                AssignmentOperator::Set => "=",
-                AssignmentOperator::Add => "+=",
-                AssignmentOperator::Subtract => "-=",
-            };
             format!(
-                "{} {operator} {}",
+                "{} {} {}",
                 assignment.target.display(),
+                assignment.operator.as_str(),
                 format_expr(&assignment.value)
             )
         }
@@ -817,15 +816,12 @@ fn format_expr(expression: &Expr) -> String {
             operator,
             right,
         } => {
-            let operator = match operator {
-                BinaryOperator::Equal => "==",
-                BinaryOperator::NotEqual => "!=",
-                BinaryOperator::Greater => ">",
-                BinaryOperator::GreaterEqual => ">=",
-                BinaryOperator::Less => "<",
-                BinaryOperator::LessEqual => "<=",
-            };
-            format!("{} {operator} {}", format_expr(left), format_expr(right))
+            format!(
+                "{} {} {}",
+                format_expr(left),
+                operator.as_str(),
+                format_expr(right)
+            )
         }
     }
 }
@@ -991,8 +987,44 @@ fn print_simulation(report: &SimulationReport) {
     );
 }
 
+fn print_capabilities() {
+    let inventory = morva_core::capabilities();
+    println!("capabilities: v{}", inventory.version);
+    let line = |label: &str, items: &[&str]| println!("{label}: {}", items.join(", "));
+    line("declarations", &inventory.declarations);
+    line("clauses", &inventory.clause_kinds);
+    line("expression forms", &inventory.expression_forms);
+    line("comparison operators", &inventory.comparison_operators);
+    line("assignment operators", &inventory.assignment_operators);
+    line("literals", &inventory.literals);
+    line("builtin types", &inventory.builtin_types);
+    println!(
+        "builtin type aliases: {}",
+        inventory
+            .builtin_type_aliases
+            .iter()
+            .map(|(alias, canonical)| format!("{alias} = {canonical}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    line("simulation value types", &inventory.simulation_value_types);
+    line("simulation phases", &inventory.simulation_phases);
+    line(
+        "compatibility containers (parsed, not validated)",
+        &inventory.compatibility_containers,
+    );
+    line(
+        "action soft behaviors (parsed, not validated or executed)",
+        &inventory.soft_behaviors,
+    );
+    println!("unsupported:");
+    for item in &inventory.unsupported {
+        println!("  {item}");
+    }
+}
+
 fn help() {
     println!(
-        "Morva semantic model tools\n\nUsage:\n  morva check <file-or-directory>\n  morva parse <file-or-directory>\n  morva inspect <file-or-directory>\n  morva simulate <file-or-directory> <scenario>\n  morva help"
+        "Morva semantic model tools\n\nUsage:\n  morva check <file-or-directory>\n  morva parse <file-or-directory>\n  morva inspect <file-or-directory>\n  morva simulate <file-or-directory> <scenario>\n  morva capabilities\n  morva help"
     );
 }

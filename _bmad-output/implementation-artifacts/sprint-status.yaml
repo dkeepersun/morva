@@ -54,11 +54,11 @@ development_status:
   1-4-按文件组织同一系统模型: done
   epic-1-retrospective: optional
 
-  epic-2: in-progress
+  epic-2: done
   2-1-识别已解析但未验证的兼容容器: done
   2-2-识别未执行的-action-soft-behavior: done
   2-3-在-inspect-中查看未建模内容: done
-  2-4-查询-morva-的权威能力清单: backlog
+  2-4-查询-morva-的权威能力清单: done
   epic-2-retrospective: optional
 
   epic-3: backlog

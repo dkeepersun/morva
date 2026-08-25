@@ -1,5 +1,6 @@
 mod analysis;
 mod ast;
+mod capabilities;
 mod diagnostic;
 mod lexer;
 mod parser;
@@ -9,6 +10,7 @@ mod simulate;
 
 pub use analysis::{AnalysisFinding, AnalysisReport, Notice, NoticeKind, analyze};
 pub use ast::*;
+pub use capabilities::{CAPABILITY_INVENTORY_VERSION, CapabilityInventory, capabilities};
 pub use diagnostic::Diagnostic;
 pub use project::{
     LocalSourceSpan, Project, ProjectAnalysisReport, ProjectDiagnostic, ProjectFinding,

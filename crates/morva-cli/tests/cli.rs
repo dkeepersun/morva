@@ -1229,3 +1229,31 @@ fn cli_simulation_output_is_identical_with_or_without_soft_behaviors() {
     assert!(!stdout.contains("retry"));
     assert!(!stdout.contains("implementation_hint"));
 }
+
+#[test]
+fn capabilities_prints_the_stable_inventory_without_reading_models() {
+    let first = morva(&["capabilities"]);
+    assert!(first.status.success(), "{}", text(&first.stderr));
+    assert!(first.stderr.is_empty());
+    let stdout = text(&first.stdout);
+    assert!(stdout.starts_with("capabilities: v1\n"));
+    assert!(stdout.contains("\ndeclarations: system, entity, enum, action, scenario\n"));
+    assert!(stdout.contains("\ncomparison operators: ==, !=, >, >=, <, <=\n"));
+    assert!(stdout.contains("\nassignment operators: =, +=, -=\n"));
+    assert!(stdout.contains(
+        "\nsimulation phases: givens, initial invariants, requires, effects, final invariants, ensures, expects\n"
+    ));
+    assert!(stdout.contains(
+        "\ncompatibility containers (parsed, not validated): module, service, event, flow, lifecycle, policy\n"
+    ));
+    assert!(stdout.contains(
+        "\naction soft behaviors (parsed, not validated or executed): atomic, idempotent, timeout, retry, implementation_hint\n"
+    ));
+    assert!(stdout.contains("\nunsupported:\n"));
+
+    let second = morva(&["capabilities"]);
+    assert_eq!(first.stdout, second.stdout);
+    assert_eq!(first.status.code(), second.status.code());
+
+    assert_eq!(morva(&["capabilities", "extra"]).status.code(), Some(2));
+}

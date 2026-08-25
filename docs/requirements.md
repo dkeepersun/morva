@@ -103,6 +103,7 @@ grill / challenge / review（规划中）
 - `morva parse <file-or-directory>`：对通过当前语义检查的模型，输出强类型 AST 中已建模的声明内容；不回显被忽略的兼容文本。
 - `morva inspect <file-or-directory>`：输出稳定的语义摘要文本。
 - `morva simulate <file-or-directory> <scenario>`：执行一个已检查的最小场景。
+- `morva capabilities`：不读取任何模型文件，输出 core 权威能力清单的稳定文本。
 - 退出码固定为：成功 `0`，模型无效或模拟失败 `1`，用法/文件错误 `2`。
 
 ### FR-07 最小模型级模拟

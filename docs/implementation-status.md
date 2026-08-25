@@ -22,6 +22,7 @@
 - 普通诊断和模拟失败共享有界源码窗口；excerpt 与 marker 分别不超过 160 个渲染字符，换行终止符不回显，所有 UTF-8 路径输出安全转义控制字符。
 - Additive core analysis report 为每个兼容容器生成结构化 `MORVA5001`，并为每个 action soft behavior 生成结构化 `MORVA5002`；Project 将 keyword span 单次回映到责任源，CLI `check` 安全渲染 warning 且 warning-only 仍退出 0，旧 `check()` 与 simulator 保持 error-only。
 - CLI `inspect` 消费同一 analysis notices，在存在未建模内容时追加确定的 `unmodeled:` 摘要：容器 kind/name 与 action/soft behavior 按源码顺序（项目按文件顺序）列出，只显示结构化名称、不回显正文；无未建模内容时不输出摘要，重复运行 byte-identical。
+- Core 提供版本化 `capabilities()` 能力清单（v1）：语义声明、clause、表达式形态、操作符、字面量、builtin 类型与别名、模拟值类型与七阶段、兼容容器、soft behavior 和明确不支持类别；容器/soft behavior/操作符/阶段直接复用 parser、AST 与 simulator 的同一常量，公开测试逐项验证清单与实际解析、检查行为一致。`morva capabilities` 命令不读文件、输出确定文本并退出 0。
 
 ## 兼容解析但没有专有语义
 

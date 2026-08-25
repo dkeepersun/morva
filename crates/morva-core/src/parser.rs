@@ -2,19 +2,11 @@ use crate::Diagnostic;
 use crate::ast::*;
 use crate::lexer::{Token, TokenKind, lex};
 
-const DECLARATION_KINDS: &[&str] = &[
-    "system",
-    "module",
-    "entity",
-    "enum",
-    "service",
-    "action",
-    "event",
-    "flow",
-    "lifecycle",
-    "scenario",
-    "policy",
-];
+pub(crate) const SEMANTIC_DECLARATION_KINDS: &[&str] =
+    &["system", "entity", "enum", "action", "scenario"];
+
+pub(crate) const COMPATIBILITY_CONTAINER_KINDS: &[&str] =
+    &["module", "service", "event", "flow", "lifecycle", "policy"];
 
 const RESERVED_NAMES: &[&str] = &[
     "system",
@@ -713,7 +705,9 @@ impl Parser {
 
     fn current_declaration_kind(&self) -> Option<&str> {
         let value = identifier_text(self.current())?;
-        DECLARATION_KINDS.contains(&value).then_some(value)
+        (SEMANTIC_DECLARATION_KINDS.contains(&value)
+            || COMPATIBILITY_CONTAINER_KINDS.contains(&value))
+        .then_some(value)
     }
 
     fn current_soft_behavior_kind(&self) -> Option<SoftBehaviorKind> {

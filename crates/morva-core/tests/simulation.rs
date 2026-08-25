@@ -516,3 +516,18 @@ fn soft_behaviors_do_not_change_any_simulation_result_field() {
     assert_eq!(soft_report.phases.len(), 7);
     assert!(soft_report.succeeded());
 }
+
+#[test]
+fn simulation_phases_match_the_capability_inventory() {
+    let document = checked(include_str!("../../../examples/order.morva"));
+    let report = simulate(&document, "NormalConfirmation").expect("scenario selected");
+    let inventory = morva_core::capabilities();
+    assert_eq!(
+        report
+            .phases
+            .iter()
+            .map(|phase| phase.phase.as_str())
+            .collect::<Vec<_>>(),
+        inventory.simulation_phases
+    );
+}
