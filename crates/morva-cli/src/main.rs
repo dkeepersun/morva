@@ -56,6 +56,9 @@ fn main() -> ExitCode {
         ([command, path], OutputFormat::Json) if command == "parse" => run_parse_json(path),
         ([command, path], OutputFormat::Json) if command == "inspect" => run_inspect_json(path),
         ([command], OutputFormat::Json) if command == "capabilities" => run_capabilities_json(),
+        ([command, path, scenario], OutputFormat::Json) if command == "simulate" => {
+            run_simulation_json(path, scenario)
+        }
         (rest, OutputFormat::Json) => {
             let command = rest.first().map(String::as_str).unwrap_or("");
             machine_error(command, "usage", "unsupported machine command or arguments")
@@ -1319,7 +1322,7 @@ fn print_capabilities() {
 
 fn help() {
     println!(
-        "Morva semantic model tools\n\nUsage:\n  morva check [--format json] <file-or-directory>\n  morva parse [--format json] <file-or-directory>\n  morva inspect [--format json] <file-or-directory>\n  morva simulate <file-or-directory> <scenario>\n  morva capabilities [--format json]\n  morva help"
+        "Morva semantic model tools\n\nUsage:\n  morva check [--format json] <file-or-directory>\n  morva parse [--format json] <file-or-directory>\n  morva inspect [--format json] <file-or-directory>\n  morva simulate [--format json] <file-or-directory> <scenario>\n  morva capabilities [--format json]\n  morva help"
     );
 }
 
@@ -1335,6 +1338,26 @@ enum Locator<'a> {
 }
 
 impl Locator<'_> {
+    fn try_location(&self, span: Span) -> Option<Json> {
+        match self {
+            Self::Single { path, source } => {
+                let (line, column, _) = location(source, span.start);
+                Some(location_json(path, line, column, span))
+            }
+            Self::Project { sources, project } => {
+                let local = project.locate_virtual_span(span)?;
+                let source = &sources[local.source_id.0];
+                let (line, column, _) = location(&source.source, local.local_span.start);
+                Some(location_json(
+                    &source.path.to_string_lossy(),
+                    line,
+                    column,
+                    local.local_span,
+                ))
+            }
+        }
+    }
+
     fn location(&self, span: Span) -> Json {
         match self {
             Self::Single { path, source } => {
@@ -1988,4 +2011,157 @@ fn run_capabilities_json() -> ExitCode {
         vec![("capabilities", capabilities)],
     ));
     ExitCode::SUCCESS
+}
+
+fn run_simulation_json(path: &str, scenario: &str) -> ExitCode {
+    let model = match load_checked_model(path) {
+        Ok(model) => model,
+        Err(failure) => return load_failure_machine("simulate", failure),
+    };
+    let locator = match &model {
+        LoadedModel::Single { source, .. } => Locator::Single {
+            path: source.path.to_string_lossy().into_owned(),
+            source: &source.source,
+        },
+        LoadedModel::Project { sources, project } => Locator::Project { sources, project },
+    };
+    let report = match simulate(model.document(), scenario) {
+        Ok(report) => report,
+        Err(diagnostic) => {
+            let item = machine_diagnostic_at(
+                "error",
+                diagnostic.code,
+                &diagnostic.message,
+                locator.try_location(diagnostic.span),
+            );
+            return machine_diagnostics_exit("simulate", false, vec![item]);
+        }
+    };
+    let system = model
+        .document()
+        .declarations
+        .iter()
+        .find_map(|item| match item {
+            Declaration::System(system) => Some(system.name.text.clone()),
+            _ => None,
+        })
+        .expect("checked document has one system");
+    let phases = Json::Array(
+        morva_core::SimulationPhase::ALL
+            .iter()
+            .map(|phase| {
+                let status = report
+                    .phases
+                    .iter()
+                    .find(|result| result.phase == *phase)
+                    .map_or(
+                        "not_run",
+                        |result| {
+                            if result.passed { "passed" } else { "failed" }
+                        },
+                    );
+                Json::Object(vec![
+                    ("phase", Json::string(phase.as_str())),
+                    ("status", Json::string(status)),
+                ])
+            })
+            .collect(),
+    );
+    let changes = Json::Array(
+        report
+            .changes
+            .iter()
+            .map(|change| {
+                Json::Object(vec![
+                    ("path", Json::string(&change.path)),
+                    (
+                        "before",
+                        change
+                            .before
+                            .as_ref()
+                            .map_or(Json::Null, simulation_value_json),
+                    ),
+                    ("after", simulation_value_json(&change.after)),
+                ])
+            })
+            .collect(),
+    );
+    let state = Json::Array(
+        report
+            .state
+            .iter()
+            .map(|(path, value)| {
+                Json::Object(vec![
+                    ("path", Json::string(path)),
+                    ("value", simulation_value_json(value)),
+                ])
+            })
+            .collect(),
+    );
+    let failure = match &report.failure {
+        None => Json::Null,
+        Some(failure) => Json::Object(vec![
+            ("phase", Json::string(failure.phase.as_str())),
+            ("message", Json::string(&failure.message)),
+            (
+                "location",
+                locator.try_location(failure.span).unwrap_or(Json::Null),
+            ),
+        ]),
+    };
+    let success = report.succeeded();
+    let payload = Json::Object(vec![
+        ("system", Json::string(&system)),
+        ("scenario", Json::string(&report.scenario)),
+        ("action", Json::string(&report.action)),
+        ("phases", phases),
+        ("changes", changes),
+        ("state", state),
+        ("failure", failure),
+    ]);
+    emit_machine(&machine_envelope(
+        "simulate",
+        success,
+        vec![
+            ("diagnostics", Json::Array(Vec::new())),
+            ("report", payload),
+        ],
+    ));
+    if success {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+fn simulation_value_json(value: &morva_core::Value) -> Json {
+    match value {
+        morva_core::Value::Boolean(inner) => Json::Object(vec![
+            ("type", Json::string("boolean")),
+            ("value", Json::Bool(*inner)),
+        ]),
+        morva_core::Value::Integer(inner) => Json::Object(vec![
+            ("type", Json::string("integer")),
+            ("value", Json::string(&inner.to_string())),
+        ]),
+        morva_core::Value::Enum { type_name, member } => Json::Object(vec![
+            ("type", Json::string("enum")),
+            ("enum", Json::string(type_name)),
+            ("member", Json::string(member)),
+        ]),
+    }
+}
+
+fn machine_diagnostic_at(
+    severity: &str,
+    code: &str,
+    message: &str,
+    location: Option<Json>,
+) -> Json {
+    Json::Object(vec![
+        ("severity", Json::string(severity)),
+        ("code", Json::string(code)),
+        ("message", Json::string(message)),
+        ("location", location.unwrap_or(Json::Null)),
+    ])
 }

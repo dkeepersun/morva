@@ -1520,3 +1520,89 @@ fn json_capabilities_serializes_the_same_core_inventory() {
     assert!(human_text.contains("declarations: system, entity, enum, action, scenario"));
     assert!(stdout.contains("\"scenario\"\n    ],"));
 }
+
+#[test]
+fn json_simulate_reports_the_seven_phases_and_typed_values() {
+    let example = example();
+    let path = example.to_str().expect("UTF-8 path");
+    let first = morva(&["simulate", "--format", "json", path, "NormalConfirmation"]);
+    let second = morva(&["simulate", "--format", "json", path, "NormalConfirmation"]);
+    assert!(first.status.success(), "{}", text(&first.stderr));
+    assert!(first.stderr.is_empty());
+    assert_eq!(first.stdout, second.stdout, "byte-identical repeats");
+    let stdout = text(&first.stdout);
+    assert!(stdout.contains("\"command\": \"simulate\""));
+    assert!(stdout.contains("\"success\": true"));
+    assert!(stdout.contains("\"system\": \"Shop\""));
+    assert!(stdout.contains("\"scenario\": \"NormalConfirmation\""));
+    assert!(stdout.contains("\"action\": \"Confirm\""));
+    for phase in [
+        "givens",
+        "initial invariants",
+        "requires",
+        "effects",
+        "final invariants",
+        "ensures",
+        "expects",
+    ] {
+        assert!(
+            stdout.contains(&format!(
+                "\"phase\": \"{phase}\",\n        \"status\": \"passed\""
+            )),
+            "missing passed phase {phase}"
+        );
+    }
+    assert!(stdout.contains("\"type\": \"enum\""));
+    assert!(stdout.contains("\"member\": \"Confirmed\""));
+    assert!(stdout.contains("\"failure\": null"));
+    assert!(!stdout.contains("PASS"));
+    assert!(!stdout.contains("FAIL"));
+}
+
+#[test]
+fn json_simulate_marks_failed_and_not_run_phases_with_a_located_failure() {
+    let project = temporary_project("json-simulate-fail");
+    write_project_source(
+        &project,
+        "10-model.morva",
+        b"system Shop {\n  entity Order { open: Boolean }\n  action Close(order: Order) {\n    requires order.open\n    effects order.open = false\n  }\n}\n",
+    );
+    write_project_source(
+        &project,
+        "20-scenarios.morva",
+        b"system Shop {\n  scenario Closed {\n    given order.open = false\n    run Close(order)\n    expect true\n  }\n}\n",
+    );
+    let output = morva(&[
+        "simulate",
+        "--format",
+        "json",
+        project.to_str().unwrap(),
+        "Closed",
+    ]);
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stderr.is_empty());
+    let stdout = text(&output.stdout);
+    assert!(stdout.contains("\"success\": false"));
+    assert!(stdout.contains("\"phase\": \"requires\",\n        \"status\": \"failed\""));
+    assert!(stdout.contains("\"phase\": \"effects\",\n        \"status\": \"not_run\""));
+    assert!(stdout.contains("\"phase\": \"expects\",\n        \"status\": \"not_run\""));
+    assert!(stdout.contains("\"message\": \"predicate evaluated to false\""));
+    assert!(
+        stdout.contains("10-model.morva\""),
+        "failure maps to the responsible model file"
+    );
+    assert!(!stdout.contains("virtual"));
+
+    let unknown = morva(&[
+        "simulate",
+        "--format",
+        "json",
+        project.to_str().unwrap(),
+        "Nope",
+    ]);
+    assert_eq!(unknown.status.code(), Some(1));
+    assert!(unknown.stderr.is_empty());
+    let stdout = text(&unknown.stdout);
+    assert!(stdout.contains("\"code\": \"MORVA4001\""));
+    assert!(stdout.contains("\"success\": false"));
+}

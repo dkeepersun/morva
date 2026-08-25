@@ -63,9 +63,8 @@ Invalid input diagnostics include a stable code, line and column, and a source m
 
 ## Machine output
 
-`check`, `parse`, `inspect`, and `capabilities` accept `--format json`. Machine
-output writes exactly one versioned JSON envelope to stdout and nothing to
-stderr:
+All five commands accept `--format json`. Machine output writes exactly one
+versioned JSON envelope to stdout and nothing to stderr:
 
 ```json
 { "protocol": "morva.cli", "schema_version": 1, "command": "check", "success": true, "diagnostics": [] }
@@ -106,6 +105,15 @@ versions with distinct meanings: `schema_version` is the morva.cli JSON
 protocol version, and `capabilities.version` is the reviewed capability-model
 version from `morva_core::capabilities()`; either changes only with its own
 reviewed contract change.
+
+`simulate --format json` embeds a `report` with the system, scenario, action,
+all seven phases in fixed order (each `passed`, `failed`, or `not_run`),
+deterministic state changes and final state with explicitly typed values
+(`boolean`, `integer` as a decimal string, `enum` with type and member), and a
+`failure` object carrying the phase, runtime message, and the responsible real
+source location. Scenario-selection errors reuse the machine diagnostic shape
+with exit `1`; no PASS/FAIL text or human phase table mixes into machine
+output.
 
 ## Planned, not implemented
 
