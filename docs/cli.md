@@ -22,6 +22,15 @@ path/excerpt renderer, remain on stderr, and do not change success exit `0`; onl
 errors suppress the `ok:` line and exit `1`. `parse`, `inspect`, and `simulate` do
 not render these warnings.
 
+`inspect` appends an `unmodeled:` summary derived from the same core analysis
+notices whenever the model contains compatibility containers or action soft
+behaviors: total item count, then container kind/name pairs and action/soft
+behavior pairs in source order (project file order first for directories). It
+shows only structured kinds and names — never skipped body text — and claims no
+validation or execution of the listed items. Models without unmodeled content
+print no summary, keeping the existing inspect text unchanged. The summary is on
+stdout and repeat runs are byte-identical.
+
 A directory is a flat Morva project. Discovery includes only direct-child regular
 files whose extension is exactly lowercase `.morva`, ignores other files,
 subdirectories, and symlinks, and sorts candidates by filename bytes. Every file

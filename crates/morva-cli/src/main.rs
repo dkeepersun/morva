@@ -6,8 +6,9 @@ use std::process::ExitCode;
 
 use morva_core::{
     Action, AnalysisFinding, AssignmentOperator, BinaryOperator, ClauseExpression, Declaration,
-    Diagnostic, Document, Entity, Enum, Expr, ExprKind, Project, ProjectDiagnostic, ProjectFinding,
-    Scenario, ScenarioItem, SimulationReport, Span, analyze, check, parse, simulate,
+    Diagnostic, Document, Entity, Enum, Expr, ExprKind, Notice, NoticeKind, Project,
+    ProjectDiagnostic, ProjectFinding, Scenario, ScenarioItem, SimulationReport, Span, analyze,
+    check, parse, simulate,
 };
 
 const MAX_DIAGNOSTIC_WIDTH: usize = 160;
@@ -64,7 +65,7 @@ fn run(command: &str, path: &str) -> ExitCode {
     let document = model.document();
     match command {
         "parse" => print_document(document),
-        "inspect" => inspect_document(document),
+        "inspect" => inspect_document(document, &analyze(document).notices),
         _ => println!("ok: {}", safe_path(path)),
     }
     ExitCode::SUCCESS
@@ -829,7 +830,7 @@ fn format_expr(expression: &Expr) -> String {
     }
 }
 
-fn inspect_document(document: &Document) {
+fn inspect_document(document: &Document, notices: &[Notice]) {
     let mut enumerations = Vec::new();
     let mut entities = Vec::new();
     let mut actions = Vec::new();
@@ -903,6 +904,36 @@ fn inspect_document(document: &Document) {
             "  {}: {} given(s), 1 run, {} expect(s)",
             scenario.name.text, givens, expects
         );
+    }
+    print_unmodeled_summary(notices);
+}
+
+fn print_unmodeled_summary(notices: &[Notice]) {
+    if notices.is_empty() {
+        return;
+    }
+    let containers: Vec<_> = notices
+        .iter()
+        .filter_map(|notice| match &notice.kind {
+            NoticeKind::CompatibilityContainer { kind, name } => Some((kind, name)),
+            NoticeKind::ActionSoftBehavior { .. } => None,
+        })
+        .collect();
+    let behaviors: Vec<_> = notices
+        .iter()
+        .filter_map(|notice| match &notice.kind {
+            NoticeKind::ActionSoftBehavior { action, behavior } => Some((action, behavior)),
+            NoticeKind::CompatibilityContainer { .. } => None,
+        })
+        .collect();
+    println!("unmodeled: {} item(s)", notices.len());
+    println!("  compatibility containers: {}", containers.len());
+    for (kind, name) in containers {
+        println!("    {kind} {name}");
+    }
+    println!("  action soft behaviors: {}", behaviors.len());
+    for (action, behavior) in behaviors {
+        println!("    {action}: {}", behavior.as_str());
     }
 }
 

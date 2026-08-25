@@ -106,8 +106,39 @@ fn check_parse_and_inspect_the_example() {
     assert!(inspected.status.success(), "{}", text(&inspected.stderr));
     assert_eq!(
         text(&inspected.stdout),
-        "system: Shop\nenums: 1\n  OrderStatus: 3 member(s)\nentities: 1\n  Order: 2 field(s), 0 invariant(s)\nactions: 1\n  Confirm: 1 parameter(s), 1 requires, 1 effects, 1 ensures, 0 invariants\nscenarios: 1\n  NormalConfirmation: 1 given(s), 1 run, 1 expect(s)\n"
+        "system: Shop\nenums: 1\n  OrderStatus: 3 member(s)\nentities: 1\n  Order: 2 field(s), 0 invariant(s)\nactions: 1\n  Confirm: 1 parameter(s), 1 requires, 1 effects, 1 ensures, 0 invariants\nscenarios: 1\n  NormalConfirmation: 1 given(s), 1 run, 1 expect(s)\nunmodeled: 3 item(s)\n  compatibility containers: 1\n    module Orders\n  action soft behaviors: 2\n    Confirm: idempotent\n    Confirm: implementation_hint\n"
     );
+    assert!(text(&inspected.stderr).is_empty());
+}
+
+#[test]
+fn inspect_lists_unmodeled_project_content_in_stable_file_and_source_order() {
+    let project = temporary_project("inspect-unmodeled");
+    write_project_source(
+        &project,
+        "10-first.morva",
+        b"system Shop {\n  policy Refunds {}\n  action Save {\n    retry 2\n    atomic\n  }\n}\n",
+    );
+    write_project_source(
+        &project,
+        "20-second.morva",
+        b"system Shop {\n  module Billing {}\n  action Load {\n    timeout 5\n  }\n}\n",
+    );
+    let path = project.to_str().unwrap();
+    let first = morva(&["inspect", path]);
+    assert!(first.status.success(), "{}", text(&first.stderr));
+    let stdout = text(&first.stdout);
+    let summary = stdout
+        .split_once("unmodeled: 5 item(s)\n")
+        .expect("unmodeled summary")
+        .1;
+    assert_eq!(
+        summary,
+        "  compatibility containers: 2\n    policy Refunds\n    module Billing\n  action soft behaviors: 3\n    Save: retry\n    Save: atomic\n    Load: timeout\n"
+    );
+    let second = morva(&["inspect", path]);
+    assert_eq!(first.stdout, second.stdout);
+    assert_eq!(first.status.code(), second.status.code());
 }
 
 #[test]

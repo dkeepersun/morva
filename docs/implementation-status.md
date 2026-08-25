@@ -21,6 +21,7 @@
 - 保留 `//` 行注释（含 EOF 终止），并支持 token 间可嵌套的 `/* ... */` 块注释；块内逻辑换行仍分隔语法，未闭合时以 `MORVA1024` 标记最外层 opener。无换行块注释在任何 lexer 内容中切分 identifier/Integer 时以 `MORVA1025` 标记触发 opener。
 - 普通诊断和模拟失败共享有界源码窗口；excerpt 与 marker 分别不超过 160 个渲染字符，换行终止符不回显，所有 UTF-8 路径输出安全转义控制字符。
 - Additive core analysis report 为每个兼容容器生成结构化 `MORVA5001`，并为每个 action soft behavior 生成结构化 `MORVA5002`；Project 将 keyword span 单次回映到责任源，CLI `check` 安全渲染 warning 且 warning-only 仍退出 0，旧 `check()` 与 simulator 保持 error-only。
+- CLI `inspect` 消费同一 analysis notices，在存在未建模内容时追加确定的 `unmodeled:` 摘要：容器 kind/name 与 action/soft behavior 按源码顺序（项目按文件顺序）列出，只显示结构化名称、不回显正文；无未建模内容时不输出摘要，重复运行 byte-identical。
 
 ## 兼容解析但没有专有语义
 
