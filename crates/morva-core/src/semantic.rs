@@ -18,7 +18,7 @@ impl TypeDeclaration<'_> {
     }
 }
 
-struct TypeIndex<'a> {
+pub(crate) struct TypeIndex<'a> {
     declarations: HashMap<&'a str, Vec<TypeDeclaration<'a>>>,
 }
 
@@ -28,7 +28,7 @@ struct ExecutableIndex<'a> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum BuiltinType {
+pub(crate) enum BuiltinType {
     Boolean,
     Decimal,
     Id,
@@ -37,7 +37,7 @@ enum BuiltinType {
 }
 
 impl BuiltinType {
-    fn display(self) -> &'static str {
+    pub(crate) fn display(self) -> &'static str {
         match self {
             Self::Boolean => "Boolean",
             Self::Decimal => "Decimal",
@@ -49,7 +49,7 @@ impl BuiltinType {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum ResolvedType<'a> {
+pub(crate) enum ResolvedType<'a> {
     Builtin(BuiltinType),
     Entity(&'a Entity),
     Enum(&'a Enum),
@@ -190,7 +190,7 @@ fn find_nested_systems(
     }
 }
 
-fn collect_types<'a>(declarations: &'a [Declaration], index: &mut TypeIndex<'a>) {
+pub(crate) fn collect_types<'a>(declarations: &'a [Declaration], index: &mut TypeIndex<'a>) {
     for declaration in declarations {
         match declaration {
             Declaration::Entity(entity) => index
@@ -955,7 +955,7 @@ fn check_type_name(name: &Name, index: &TypeIndex<'_>, diagnostics: &mut Vec<Dia
     }
 }
 
-fn resolve_type<'a>(name: &Name, index: &'a TypeIndex<'a>) -> Option<ResolvedType<'a>> {
+pub(crate) fn resolve_type<'a>(name: &Name, index: &TypeIndex<'a>) -> Option<ResolvedType<'a>> {
     if let Some(builtin) = resolve_builtin(&name.text) {
         return Some(ResolvedType::Builtin(builtin));
     }
@@ -1427,4 +1427,14 @@ fn unknown_reference(name: &Name, diagnostics: &mut Vec<Diagnostic>) {
         format!("unknown reference '{}'", name.text),
         name.span,
     ));
+}
+
+/// Projection support for the checked-semantics protocol: a read-only type
+/// index built with the checker's own collection rules.
+pub(crate) fn build_type_index(document: &Document) -> TypeIndex<'_> {
+    let mut index = TypeIndex {
+        declarations: HashMap::new(),
+    };
+    collect_types(&document.declarations, &mut index);
+    index
 }

@@ -294,8 +294,15 @@ The closed expression union is:
 | `enum_member` | enum semantic key, member semantic key/name, normalized enum type |
 | `path` | ordered segments, root binding, normalized terminal type |
 | `binary` | comparison operator, left/right expressions, Boolean result type |
+| `not` | one Boolean operand expression, Boolean result type |
+| `or` | left/right Boolean expressions (left-associative source shape), Boolean result type |
 
-Comparison operators are `equal`, `not_equal`, `greater`, `greater_equal`, `less`, and `less_equal`. A path root is exactly one of `action_parameter`, `entity_self`, or `scenario_instance`; each names its resolved binding. Every path segment carries its name, resolved type, and exact location.
+Comparison operators are `equal`, `not_equal`, `greater`, `greater_equal`, `less`, and `less_equal`.
+
+> Pre-release design revision (2026-08-26): the language gained predicate
+> negation and short-circuit disjunction before any v1 producer shipped, so the
+> closed v1 expression union includes `not` and `or` from its first published
+> revision. This is not a post-release discriminant addition. A path root is exactly one of `action_parameter`, `entity_self`, or `scenario_instance`; each names its resolved binding. Every path segment carries its name, resolved type, and exact location.
 
 ### Scenario items
 

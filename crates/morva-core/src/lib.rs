@@ -5,7 +5,9 @@ mod diagnostic;
 mod lexer;
 mod parser;
 mod project;
+pub mod protocol;
 mod semantic;
+mod sha256;
 mod simulate;
 
 pub use analysis::{AnalysisFinding, AnalysisReport, Notice, NoticeKind, analyze};

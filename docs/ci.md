@@ -5,7 +5,7 @@ Morva 使用 GitHub Actions 的 [Test Pipeline](../.github/workflows/test.yml) �
 ## 门禁结构
 
 - `Format and Clippy`：执行 `cargo fmt --all -- --check` 和严格 workspace Clippy。
-- `Test (*)`：按 core language/project、core simulation 和 CLI process 三个职责分片并行运行全部 Rust 测试。
+- `Test (*)`：按 core language/project/protocol、core simulation 和 CLI process 三个职责分片并行运行全部 Rust 测试。
 - `Executable examples`：对单文件与平铺多文件项目顺序运行 `check` / `parse` / `inspect` / `simulate` 四命令闭环。
 - `Burn-in`：仅在每周定时或手动触发时连续执行三次 workspace tests，首次失败立即终止。
 - `Quality gate`：无论上游成败都生成 step summary，任一必需 job 非 `success` 则失败。

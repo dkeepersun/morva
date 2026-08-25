@@ -65,3 +65,10 @@ One public `morva-core` call can produce and canonically serialize a valid singl
 ## Open Questions
 
 - Does dependency/change control approve adding `sha2`, `serde` with derive, and `serde_json` to `morva-core` for this production slice?
+
+## Delivery Record (2026-08-26)
+
+- **Open question resolution:** no dependency/change-control approval was recorded for `sha2`/`serde`/`serde_json`, and the contract forbids manifest changes without it. The slice therefore shipped std-only: a repository-owned FIPS 180-4 SHA-256 (`morva-core/src/sha256.rs`, locked by NIST vectors and all three published protocol digest vectors, including the two-file framing preimage) and a hand-written canonical RFC 8259 JSON emitter with fixed member order, two-space indentation, and a final LF. The zero-dependency core principle is preserved; swapping in reviewed ecosystem crates later is a pure implementation substitution behind the same seam.
+- **Pre-release algebra revision:** the language gained `!` and `||` (Epic 3) before any producer shipped, so the closed v1 expression union includes `not` and `or` from its first implemented revision; schema and protocol document were updated in the same delivery.
+- **Shipped surface:** `morva_core::protocol::checked_semantics_single_file(logical_name, source)`, `CheckedSemanticsDocument::validate()`, and `CheckedSemanticsDocument::to_canonical_json()` (which refuses documents that fail validation). CLI exposure remains deferred as contracted.
+- **Evidence:** `crates/morva-core/tests/checked_semantics.rs` covers the valid/invalid/coverage/canonical/validator tracer bullets, byte-identical repeated serialization, an independently computed full-document JSON literal, typed lexical/syntax/semantic finding categories, logical-name rejection, Decimal-context literal typing, and eight mutation-based invariant rejections. CAP-1 through CAP-4 succeed; the workspace gate and examples stay green.

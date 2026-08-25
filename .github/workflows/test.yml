@@ -53,6 +53,7 @@ jobs:
             core-language)
               cargo test -p morva-core --locked --lib --test language
               cargo test -p morva-core --locked --test project
+              cargo test -p morva-core --locked --test checked_semantics
               cargo test -p morva-core --locked --doc
               ;;
             core-simulation)

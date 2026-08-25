@@ -400,13 +400,44 @@
         }
       ]
     },
+    "notExpression": {
+      "allOf": [
+        { "$ref": "#/$defs/expressionBase" },
+        {
+          "type": "object",
+          "required": ["kind", "operand"],
+          "properties": {
+            "kind": { "const": "not" },
+            "operand": { "$ref": "#/$defs/expression" },
+            "resolved_type": { "type": "object", "required": ["kind", "name"], "properties": { "kind": { "const": "builtin" }, "name": { "const": "Boolean" } } }
+          }
+        }
+      ]
+    },
+    "orExpression": {
+      "allOf": [
+        { "$ref": "#/$defs/expressionBase" },
+        {
+          "type": "object",
+          "required": ["kind", "left", "right"],
+          "properties": {
+            "kind": { "const": "or" },
+            "left": { "$ref": "#/$defs/expression" },
+            "right": { "$ref": "#/$defs/expression" },
+            "resolved_type": { "type": "object", "required": ["kind", "name"], "properties": { "kind": { "const": "builtin" }, "name": { "const": "Boolean" } } }
+          }
+        }
+      ]
+    },
     "expression": {
       "oneOf": [
         { "$ref": "#/$defs/integerExpression" },
         { "$ref": "#/$defs/booleanExpression" },
         { "$ref": "#/$defs/enumMemberExpression" },
         { "$ref": "#/$defs/pathExpression" },
-        { "$ref": "#/$defs/binaryExpression" }
+        { "$ref": "#/$defs/binaryExpression" },
+        { "$ref": "#/$defs/notExpression" },
+        { "$ref": "#/$defs/orExpression" }
       ]
     },
     "assignment": {
