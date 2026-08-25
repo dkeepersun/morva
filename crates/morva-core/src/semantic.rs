@@ -572,7 +572,6 @@ enum LiteralFactValue {
 }
 
 enum LiteralFact {
-    Always(bool),
     Equal(String, LiteralFactValue),
     NotEqual(String, LiteralFactValue),
 }
@@ -723,7 +722,7 @@ fn check_predicate_group(
                         entry.not_equal.push(value);
                     }
                 }
-                Some(LiteralFact::Always(_)) | None => {}
+                None => {}
             }
         }
     }
@@ -787,7 +786,7 @@ fn evaluate_formula(
             let (path, value, expects_equal) = match fact {
                 Some(LiteralFact::Equal(path, value)) => (path, value, true),
                 Some(LiteralFact::NotEqual(path, value)) => (path, value, false),
-                Some(LiteralFact::Always(_)) | None => return Tri::Unknown,
+                None => return Tri::Unknown,
             };
             let Some(entry) = facts.get(&path) else {
                 return Tri::Unknown;
@@ -816,15 +815,14 @@ fn literal_fact(
     index: &TypeIndex<'_>,
 ) -> Option<LiteralFact> {
     match &expression.kind {
-        ExprKind::Boolean(value) => Some(LiteralFact::Always(*value)),
+        ExprKind::Boolean(_) => None,
         ExprKind::Binary {
             left,
             operator,
             right,
         } => {
-            if let (Some(left), Some(right)) = (plain_literal(left), plain_literal(right)) {
-                return evaluate_literal_comparison(left, *operator, right)
-                    .map(LiteralFact::Always);
+            if plain_literal(left).is_some() && plain_literal(right).is_some() {
+                return None;
             }
             if !matches!(operator, BinaryOperator::Equal | BinaryOperator::NotEqual) {
                 return None;
