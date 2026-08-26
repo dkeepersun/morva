@@ -59,22 +59,15 @@
 
 ## 已批准并完成的规格
 
-- `_bmad-output/implementation-artifacts/spec-v0-1-minimal-semantic-core.md`
-- `_bmad-output/implementation-artifacts/spec-v0-1-minimal-simulate.md`
-- `_bmad-output/implementation-artifacts/spec-minimal-static-expression-types.md`
-- `_bmad-output/implementation-artifacts/spec-bounded-diagnostic-rendering.md`
-- `_bmad-output/implementation-artifacts/spec-universal-newline-contract.md`
-- `_bmad-output/implementation-artifacts/spec-obvious-transition-contradictions.md`
-- `_bmad-output/implementation-artifacts/spec-multi-file-language-projects.md`
-- `_bmad-output/implementation-artifacts/spec-readable-source-comments.md`
-- `_bmad-output/implementation-artifacts/spec-compatibility-container-warnings.md`
-- `_bmad-output/implementation-artifacts/spec-action-soft-behavior-warnings.md`
-- `_bmad-output/implementation-artifacts/spec-unmodeled-inspect-summary.md`
-- `_bmad-output/implementation-artifacts/spec-capability-inventory.md`
-- `_bmad-output/implementation-artifacts/spec-boolean-negation-grouping.md`
-- `_bmad-output/implementation-artifacts/spec-boolean-disjunction.md`
-- `_bmad-output/implementation-artifacts/spec-nested-boolean-contradictions.md`
-- `_bmad-output/specs/spec-checked-semantics-v1/SPEC.md`
+规格与 story 工件曾位于 `_bmad-output/implementation-artifacts/`，该目录已于
+2026-08-26 清理（完整内容保留在 git 历史中，最后完整版本见提交 `06811de` 的父
+提交）。已完成的冻结规格按交付顺序为：minimal semantic core、minimal simulate、
+static expression types、bounded diagnostic rendering、universal newline
+contract、obvious transition contradictions、multi-file language projects、
+readable source comments、compatibility container warnings、action soft
+behavior warnings、unmodeled inspect summary、capability inventory、Boolean
+negation/grouping、Boolean disjunction、nested Boolean contradictions、
+checked-semantics v1（单文件切片）、read-only MCP server。
 
 冻结块记录人类批准意图，其他 AI 不得自行修改其边界或把未完成方向标为已完成。
 
