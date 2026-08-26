@@ -93,3 +93,39 @@ fn write_json_string(value: &str, out: &mut String) {
     }
     out.push('"');
 }
+
+impl Json {
+    /// Single-line emission for line-delimited transports; identical escaping
+    /// to the canonical pretty form.
+    pub fn write_compact(&self, out: &mut String) {
+        match self {
+            Self::Null => out.push_str("null"),
+            Self::Bool(true) => out.push_str("true"),
+            Self::Bool(false) => out.push_str("false"),
+            Self::UInt(value) => out.push_str(&value.to_string()),
+            Self::Str(value) => write_json_string(value, out),
+            Self::Array(items) => {
+                out.push('[');
+                for (index, item) in items.iter().enumerate() {
+                    if index > 0 {
+                        out.push(',');
+                    }
+                    item.write_compact(out);
+                }
+                out.push(']');
+            }
+            Self::Object(members) => {
+                out.push('{');
+                for (index, (name, value)) in members.iter().enumerate() {
+                    if index > 0 {
+                        out.push(',');
+                    }
+                    write_json_string(name, out);
+                    out.push(':');
+                    value.write_compact(out);
+                }
+                out.push('}');
+            }
+        }
+    }
+}

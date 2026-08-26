@@ -62,6 +62,7 @@ jobs:
             cli-process)
               cargo test -p morva-machine --locked --all-targets
               cargo test -p morva-cli --locked --all-targets
+              cargo test -p morva-mcp --locked --all-targets
               ;;
             *)
               echo "unknown test suite: $TEST_SUITE" >&2

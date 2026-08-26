@@ -4,11 +4,11 @@
 
 ## 项目速览
 
-- 类型：单一产品、双 crate Rust workspace（library + CLI）
+- 类型：单一产品、四 crate Rust workspace（core library + 共享机器输出 + CLI + 只读 MCP 服务器）
 - 主语言：Rust 2024 edition
 - 架构：lexer → parser → typed AST → semantic check → CLI/simulator
 - Source of Truth：经过人工审核的 `.morva` 源码
-- 当前状态：v0.1 semantic core、平铺多文件项目装配、最小 single-action simulate、静态表达式类型、有界诊断与通用换行契约已完成；CI 已推送并由 GitHub 托管运行成功，branch protection 尚未启用
+- 当前状态：v0.1 semantic core、多文件装配、Boolean 取反/析取与三态矛盾分析、四命令 `--format json`、checked-semantics 协议单文件切片与只读 MCP 服务器已完成；CI 由 GitHub 托管运行成功，branch protection 尚未启用
 
 ## 必读文档
 
@@ -28,6 +28,7 @@
 - [历史项目扫描快照](project-scan-report.json) — 数量与验证结果仅适用于其 `source_commit`
 - [源码树与职责](source-tree-analysis.md)
 - [CLI 设计与契约](cli.md)
+- [MCP 集成](mcp.md)
 
 ## 产品设计与规划
 

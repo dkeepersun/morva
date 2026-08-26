@@ -1,10 +1,12 @@
 # Morva 实现状态
 
-最后核对：2026-08-10。当前能力以下列已完成规格、对应源码/公开测试和实际质量门禁结果为证据；提交锚定的历史数字不代表当前总量。
+最后核对：2026-08-26。当前能力以下列已完成规格、对应源码/公开测试和实际质量门禁结果为证据；提交锚定的历史数字不代表当前总量。
 
 ## 已实现且有自动化测试
 
-- Rust workspace：`morva-core` + `morva-cli`。
+- Rust workspace：`morva-core` + `morva-machine`（共享机器 payload）+ `morva-cli` + `morva-mcp`（只读 MCP 服务器）。
+- 四命令 `--format json` 机器输出（morva.cli/v1 envelope：结构化诊断、AST、modeled/unmodeled 摘要、七阶段模拟报告、能力清单），CLI 与 MCP 消费同一 `morva-machine` 实现。
+- `morva-mcp` 只读 MCP stdio 服务器：initialize/资源/工具协商、`morva://capabilities` 资源与 `morva_check/parse/inspect/simulate` 工具，仅接受内存 source bundle（256 源/1 KiB 名称/8 MiB 总量上限），无文件、shell 或网络访问；std-only（自带有界 JSON parser）。
 - 带字节 span 的 lexer、parser、强类型 AST 和 diagnostic。
 - `system`、`entity`、`enum`、`action`、`scenario` 核心模型。
 - 字段、参数、enum member、四类行为条款和有限表达式。
@@ -52,7 +54,7 @@
 - 没有模块作用域或限定名，同名短类型直接报歧义。
 - 多文件项目不递归、不支持 manifest/import/container reopening；目录发现仅限直接子级小写 `.morva` 普通文件。
 - 项目读取拒绝 symlink、目录外 canonical target 和发现后身份变化；Unix 以 device/inode 复核打开句柄。标准库无法跨平台提供原子 `nofollow`，非 Unix 身份校验较弱，且并发原地改写同一文件不承诺快照隔离。
-- `parse`/`inspect` 是稳定文本而非 JSON 协议。
+- 机器输出为 morva.cli/v1 envelope 与 checked-semantics v1 单文件切片；checked-semantics 的多文件生产、CLI 暴露与 JSONL/streaming 仍未实现。
 - 没有增量分析、formatter、Tree-sitter 或 LSP。
 
 ## 已批准并完成的规格
@@ -63,6 +65,16 @@
 - `_bmad-output/implementation-artifacts/spec-bounded-diagnostic-rendering.md`
 - `_bmad-output/implementation-artifacts/spec-universal-newline-contract.md`
 - `_bmad-output/implementation-artifacts/spec-obvious-transition-contradictions.md`
+- `_bmad-output/implementation-artifacts/spec-multi-file-language-projects.md`
+- `_bmad-output/implementation-artifacts/spec-readable-source-comments.md`
+- `_bmad-output/implementation-artifacts/spec-compatibility-container-warnings.md`
+- `_bmad-output/implementation-artifacts/spec-action-soft-behavior-warnings.md`
+- `_bmad-output/implementation-artifacts/spec-unmodeled-inspect-summary.md`
+- `_bmad-output/implementation-artifacts/spec-capability-inventory.md`
+- `_bmad-output/implementation-artifacts/spec-boolean-negation-grouping.md`
+- `_bmad-output/implementation-artifacts/spec-boolean-disjunction.md`
+- `_bmad-output/implementation-artifacts/spec-nested-boolean-contradictions.md`
+- `_bmad-output/specs/spec-checked-semantics-v1/SPEC.md`
 
 冻结块记录人类批准意图，其他 AI 不得自行修改其边界或把未完成方向标为已完成。
 
